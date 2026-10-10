@@ -42,13 +42,14 @@ CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结
 ## 项目结构
 
 ```
-src/
+codemind/
 ├── server_py/                     # Python 后端服务
 │   ├── main.py                    # FastAPI 入口
 │   ├── config.py                  # 环境变量与安全校验
 │   ├── database.py                # 双驱动数据层：MySQL（PyMySQL 连接池）/ SQLite 建表与迁移
 │   ├── auth.py                    # JWT 签发/校验、密码哈希、权限
 │   ├── rate_limit.py              # 通用滑动窗口限流器
+│   ├── http_errors.py             # 统一 HTTP 错误响应
 │   ├── models.py                  # Pydantic 请求/响应模型
 │   ├── routes/                    # 路由层
 │   │   ├── auth.py                # 注册/登录/改密/注销
@@ -67,20 +68,23 @@ src/
 │   │   ├── usage_service.py       # 用量与成本
 │   │   └── generation_history_service.py
 │   ├── tests/                     # pytest 单元测试与 API 集成测试（鉴权/RBAC/隔离/级联/维度防护）
+│   ├── conftest.py                # 测试配置（SQLite 临时库 / MySQL 测试库）
 │   ├── requirements.txt / requirements-dev.txt
+│   ├── .env.example               # 环境变量模板
 │   └── Dockerfile
 ├── client/                        # 前端应用
 │   ├── src/
 │   │   ├── api/                   # API 封装
 │   │   ├── router/                # 路由配置（懒加载）
 │   │   ├── store/                 # 状态管理
-│   │   ├── components/            # 可复用组件（DebugPanel 等）
-│   │   ├── views/                 # 页面组件（含 Knowledge.vue）
+│   │   ├── components/            # 可复用组件（AuthShell、DebugPanel 等）
+│   │   ├── views/                 # 页面组件（Home/Knowledge/History/Admin 等）
 │   │   ├── App.vue
 │   │   └── main.js
+│   ├── nginx.conf                 # 生产 Nginx（gzip / 缓存 / API 反代）
 │   └── package.json
-├── .github/workflows/ci.yml       # 后端测试 + 前端 lint/构建
-├── docker-compose.yml
+├── .github/workflows/ci.yml       # 后端双驱动测试 + 前端 lint/构建
+├── docker-compose.yml             # Nginx + FastAPI + MySQL 8 编排
 └── README.md
 ```
 

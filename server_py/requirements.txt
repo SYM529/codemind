@@ -1,0 +1,10 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+python-dotenv==1.1.0
+pyjwt==2.10.1
+bcrypt==4.3.0
+langchain-openai==0.3.28
+# langchain-openai==0.3.28 要求 langchain-core>=0.3.68，锁死低版本会导致 pip ResolutionImpossible
+langchain-core>=0.3.68,<1.0.0
+pydantic==2.11.5
+numpy>=1.26

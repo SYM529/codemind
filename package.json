@@ -1,0 +1,29 @@
+{
+  "name": "codemind",
+  "version": "1.0.0",
+  "description": "CodeMind - 基于 LangChain 与 DeepSeek 的 AI 代码理解与文档生成助手",
+  "main": "server_py/main.py",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server_py && python main.py",
+    "server:dev": "cd server_py && set RELOAD=1 && python main.py",
+    "client": "cd client && npm run serve",
+    "build": "cd client && npm run build",
+    "install-all": "npm install && cd client && npm install && cd ../server_py && pip install -r requirements.txt",
+    "start": "cd server_py && python main.py"
+  },
+  "keywords": [
+    "nlp",
+    "code",
+    "comment",
+    "generator",
+    "javascript",
+    "python",
+    "java"
+  ],
+  "author": "NLP Comment Generator Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}

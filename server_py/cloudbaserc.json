@@ -1,0 +1,6 @@
+{
+  "envId": "codemind-d0g51r57g2a685828",
+  "cloudrun": {
+    "name": "codemind-server"
+  }
+}

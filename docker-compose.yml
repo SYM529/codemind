@@ -1,0 +1,24 @@
+services:
+  server:
+    build:
+      context: ./server_py
+    env_file:
+      - path: ./server_py/.env
+        required: false
+    ports:
+      - "3002:3001"
+    volumes:
+      - server-data:/app/data
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+    depends_on:
+      - server
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+
+volumes:
+  server-data:

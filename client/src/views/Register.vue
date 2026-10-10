@@ -136,10 +136,8 @@ export default {
       }
     },
     async handleRegister() {
-      if (this.registrationClosed) {
-        this.$message.error('该站点已关闭公开注册')
-        return
-      }
+      // 注册关闭时仍允许提交：后端会放行引导管理员账号（ADMIN_BOOTSTRAP_USERNAME），
+      // 其余账号由后端返回 403，前端只负责展示错误信息。
       try {
         await this.$refs.registerFormRef.validate()
         this.loading = true
@@ -154,6 +152,9 @@ export default {
         this.loading = false
       } catch (error) {
         this.loading = false
+        if (error && error.response && error.response.status === 403) {
+          this.$message.error('该站点已关闭公开注册，请联系管理员创建账号')
+        }
       }
     }
   }

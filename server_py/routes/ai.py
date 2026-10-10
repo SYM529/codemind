@@ -2,6 +2,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -22,6 +23,8 @@ from services.generation_history_service import list_generations, save_generatio
 from services.usage_service import get_usage_metrics, record_usage
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+logger = logging.getLogger(__name__)
 
 MAX_CODE_LENGTH = 20000
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -224,8 +227,10 @@ async def generate_stream(body: GenerateReq, request: Request, user=Depends(get_
                 if "DEEPSEEK_API_KEY" in str(exc):
                     await queue.put(("error", {"code": "AI_NOT_CONFIGURED", "message": str(exc)}))
                 else:
+                    logger.exception("AI 流式生成失败（RuntimeError）")
                     await queue.put(("error", {"code": "AI_GENERATION_FAILED", "message": "AI 服务暂时不可用，请稍后重试"}))
             except Exception:
+                logger.exception("AI 流式生成失败（未预期异常）")
                 await queue.put(("error", {"code": "AI_GENERATION_FAILED", "message": "AI 服务暂时不可用，请稍后重试"}))
 
         task_handle = asyncio.create_task(run())

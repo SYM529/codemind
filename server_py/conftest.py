@@ -19,3 +19,17 @@ os.environ["JWT_SECRET"] = "ci-test-secret-that-is-long-enough-for-hs256"
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["EMBEDDING_API_KEY"] = ""
 os.environ["EMBEDDING_BASE_URL"] = ""
+
+# TEST_DB_DRIVER=mysql 时用独立的 MySQL 测试库（CI 中由 service 容器提供）；
+# 默认 sqlite，用临时文件，跑完即弃。
+if os.getenv("TEST_DB_DRIVER", "sqlite").strip().lower() == "mysql":
+    os.environ["DB_DRIVER"] = "mysql"
+    os.environ["MYSQL_HOST"] = os.getenv("MYSQL_TEST_HOST", "127.0.0.1")
+    os.environ["MYSQL_PORT"] = os.getenv("MYSQL_TEST_PORT", "3306")
+    os.environ["MYSQL_USER"] = os.getenv("MYSQL_TEST_USER", "root")
+    os.environ["MYSQL_PASSWORD"] = os.getenv("MYSQL_TEST_PASSWORD", "root")
+    os.environ["MYSQL_DATABASE"] = "codemind_test"
+
+    import database as _database
+
+    _database.reset_mysql_tables()

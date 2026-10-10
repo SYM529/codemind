@@ -8,3 +8,5 @@ langchain-openai==0.3.28
 langchain-core>=0.3.68,<1.0.0
 pydantic==2.11.5
 numpy>=1.26
+pymysql>=1.1
+dbutils>=3.0

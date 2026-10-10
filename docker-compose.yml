@@ -1,10 +1,43 @@
 services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-codemind}
+      MYSQL_USER: ${MYSQL_USER:-codemind}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-codemind_pass}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change_me_strong}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    # 数据库只在 compose 内部网络可达，不映射公网端口。
+    # 如需从宿主机调试，取消下面注释（仅绑定本机回环地址）：
+    # ports:
+    #   - "127.0.0.1:3306:3306"
+
   server:
     build:
       context: ./server_py
+    depends_on:
+      mysql:
+        condition: service_healthy
     env_file:
       - path: ./server_py/.env
         required: false
+    environment:
+      DB_DRIVER: mysql
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ${MYSQL_USER:-codemind}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-codemind_pass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-codemind}
     ports:
       - "3002:3001"
     volumes:
@@ -22,3 +55,4 @@ services:
 
 volumes:
   server-data:
+  mysql-data:

@@ -4,7 +4,7 @@ CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结
 
 ## 项目概述
 
-这是一个面向 AI 应用开发的全栈项目，重点展示 LLM 调用编排、RAG 检索增强、流式响应、结构化结果校验、质量评估、成本控制、JWT 鉴权和 SQLite 持久化等工程能力。
+这是一个面向 AI 应用开发的全栈项目，重点展示 LLM 调用编排、RAG 检索增强、流式响应、结构化结果校验、质量评估、成本控制、JWT 鉴权和 MySQL/SQLite 双驱动持久化等工程能力。
 
 ## 系统特性
 
@@ -29,7 +29,7 @@ CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结
 - LangChain + DeepSeek API（OpenAI 兼容接口）
 - RAG：本地哈希 n-gram Embedding（可切换 OpenAI 兼容 Embedding API）+ NumPy 向量检索
 - Python `ast` / 正则代码结构分析
-- SQLite 数据持久化（文档、片段、向量、历史、用量）
+- 双驱动数据层：生产使用 MySQL 8（PyMySQL + DBUtils 连接池），本地开发零配置回退 SQLite（文档、片段、向量、历史、用量）
 - PyJWT + bcrypt 用户认证
 - Pydantic 结构化输出校验
 - CORS 跨域支持
@@ -46,7 +46,7 @@ src/
 ├── server_py/                     # Python 后端服务
 │   ├── main.py                    # FastAPI 入口
 │   ├── config.py                  # 环境变量与安全校验
-│   ├── database.py                # SQLite 建表与旧数据迁移
+│   ├── database.py                # 双驱动数据层：MySQL（PyMySQL 连接池）/ SQLite 建表与迁移
 │   ├── auth.py                    # JWT 签发/校验、密码哈希、权限
 │   ├── rate_limit.py              # 通用滑动窗口限流器
 │   ├── models.py                  # Pydantic 请求/响应模型
@@ -97,7 +97,7 @@ flowchart LR
     API --> LC[LangChain]
     LC --> DS[DeepSeek API]
     API --> PYD[Pydantic Validation]
-    API --> DB[(SQLite)]
+    API --> DB[(MySQL / SQLite)]
     DB --> OBS[Usage / Feedback / Evaluation]
     ADMIN[Admin Dashboard] --> API
 ```
@@ -121,14 +121,14 @@ flowchart LR
 
 ## 项目亮点与技术难点
 
-1. **RAG 混合检索**：文档分块向量化存入 SQLite，检索时融合 BM25 与向量相似度并做词面重排；默认零依赖本地哈希 n-gram Embedding，可通过环境变量切换为 OpenAI 兼容 Embedding API；入库与检索均校验向量维度一致性，切换 Embedding 模式导致维度不一致时显式报错提示重建索引，避免知识库静默失效。
+1. **RAG 混合检索**：文档分块向量化存入数据库，检索时融合 BM25 与向量相似度并做词面重排；默认零依赖本地哈希 n-gram Embedding，可通过环境变量切换为 OpenAI 兼容 Embedding API；入库与检索均校验向量维度一致性，切换 Embedding 模式导致维度不一致时显式报错提示重建索引，避免知识库静默失效。
 2. **语义缓存**：对请求签名做向量相似度匹配，命中则复用历史结果并跳过模型调用，缓存键包含知识库版本，避免上下文变化导致结果过期。
 3. **真实 Token 计量**：开启 `stream_usage`，从模型响应读取真实 `usage`，流式与非流式均记录真实输入/输出 Token 与成本（不可用时回退估算并标注来源 `api`/`estimated`/`cache`），用量接口按来源聚合，估算/真实口径不硬编码。
 4. **DeepSeek 兼容性处理**：采用"流式文本接收 + JSON 清洗 + Pydantic 校验"，并容忍模型返回顶层数组或 Markdown 围栏。
 5. **AI 结果可评估**：计算函数覆盖率和行号有效率，保存每次生成的质量评估结果。
 6. **成本与安全**：按用户记录 Token 和成本，IP 限流、登录/注册限流、代码长度限制、每日调用额度和 CORS 白名单。
 7. **数据安全隔离**：生成历史、反馈、使用量、评估、缓存和知识库数据都通过 `user_id` 隔离，注销账户时级联删除。
-8. **工程化**：pytest 单元测试与 API 集成测试（未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度防护、未配置 Key 时 503 降级）、GitHub Actions（后端测试 + 前端 lint/构建）、Docker Compose 编排。
+8. **工程化**：pytest 单元测试与 API 集成测试（未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度防护、未配置 Key 时 503 降级），CI 同时覆盖 SQLite 与 MySQL 双驱动；GitHub Actions（后端双驱动测试 + 前端 lint/构建）、Docker Compose 三容器编排（Nginx + FastAPI + MySQL 8，数据库仅内网可达）。
 
 ## 已知限制与演进路线
 
@@ -136,7 +136,7 @@ flowchart LR
 
 ### 1. 全量内存向量检索（无 ANN 索引）
 
-**现状**：`rag_service.search` 与 `cache_service.lookup` 每次将当前用户的全部 chunk / 缓存向量从 SQLite 读入内存做矩阵点积，未使用 ANN（近似最近邻）索引。在数百到数千 chunk 的规模下毫秒级返回，且零额外依赖、实现透明可审计，质量上等价于**精确最近邻**（没有 ANN 的召回损失）。
+**现状**：`rag_service.search` 与 `cache_service.lookup` 每次将当前用户的全部 chunk / 缓存向量从数据库读入内存做矩阵点积，未使用 ANN（近似最近邻）索引。在数百到数千 chunk 的规模下毫秒级返回，且零额外依赖、实现透明可审计，质量上等价于**精确最近邻**（没有 ANN 的召回损失）。
 
 **演进路线**：
 - 阶段 1（保持单文件零运维）：引入 [sqlite-vec](https://github.com/asg017/sqlite-vec) 扩展，将向量相似度下沉到 SQL，按 `user_id` 建分区索引，应用层代码基本不变。
@@ -282,19 +282,32 @@ Authorization: Bearer <token>
 
 ## 部署指南
 
-### 腾讯云 CloudBase 云托管 + 静态托管（当前线上环境）
+### 腾讯云轻量应用服务器 + Docker Compose（当前线上环境）
 
-- **CloudBase 环境**：`codemind-d0g51r57g2a685828`（ap-shanghai）
-- **后端 API（云托管容器 `codemind-server`）**：https://codemind-server-317709-11-1493196349.sh.run.tcloudbase.com
-  - 1C2G，`MinNum=1`，容器监听端口 `3001`（版本号每次部署会递增，以控制台为准）
-  - 环境变量通过云托管 `EnvParams` 注入：`JWT_SECRET`、`CORS_ORIGINS=https://codemind-d0g51r57g2a685828-1493196349.tcloudbaseapp.com`、`DEEPSEEK_API_KEY`、`ALLOW_PUBLIC_REGISTRATION=false`（关闭公开注册，新账号由管理员在 `/admin` 创建）
-- **前端（静态托管）**：https://codemind-d0g51r57g2a685828-1493196349.tcloudbaseapp.com/
-  - 构建时注入 `VUE_APP_API_BASE_URL=https://codemind-server-317709-11-1493196349.sh.run.tcloudbase.com/api`
-- **验证结果**：后端 `/api/health` 200；前端首页 200；CORS 响应头已放行前端域名
-- **更新后端**：重新执行云托管源码构建部署 `server_py/`（`EnvParams` 是整体覆盖，每次都要带上上面 4 个变量；部署后确认 `Port=3001`、`MinNum=1`）
-- **更新前端**：本地以 `VUE_APP_API_BASE_URL=<后端域名>/api npm run build` 构建后，将 `client/dist` 上传至静态托管根路径 `/`
+- **服务器**：腾讯云轻量应用服务器 4C4G（Docker CE 镜像），防火墙仅放行 SSH、`8081`（前端 Nginx）、`3002`（后端 API）
+- **一键部署**：
+  ```bash
+  git clone https://github.com/SYM529/codemind.git
+  cd codemind
+  # 参考 server_py/.env.example 创建 server_py/.env，
+  # 填写 JWT_SECRET、DEEPSEEK_API_KEY，以及 MYSQL_USER / MYSQL_PASSWORD / MYSQL_ROOT_PASSWORD
+  docker compose up -d --build
+  ```
+- **MySQL 8 由 compose 编排**：数据落在 `mysql-data` 卷持久化，重新部署不丢数据；`3306` 不映射公网，仅 compose 内部网络可达，应用通过服务名 `mysql` 内网连接
+- **访问**：前端 `http://<服务器IP>:8081`，后端健康检查 `http://<服务器IP>:3002/api/health`
+- **带宽提示**：服务器公网带宽 3Mbps，Nginx 已开启 gzip 压缩与静态资源缓存以缩短首屏加载
+- **数据备份**：
+  ```bash
+  docker run --rm -v codemind_mysql-data:/data -v $(pwd):/backup alpine \
+    tar czf /backup/mysql-backup-$(date +%F).tar.gz -C /data .
+  ```
 
-> ⚠️ 云托管容器没有挂载持久卷，`data/app.sqlite` 写在容器可写层，**每次用新镜像重新部署都会清空用户与业务数据**。演示环境可接受；若要长期留存，需迁移到数据库或定期备份该 SQLite 文件。
+### 备选：腾讯云 CloudBase 云托管 + 静态托管
+
+- 后端 API（云托管容器 `codemind-server`）：https://codemind-server-317709-11-1493196349.sh.run.tcloudbase.com（1C2G，`MinNum=1`，容器端口 `3001`）
+- 前端（静态托管）：https://codemind-d0g51r57g2a685828-1493196349.tcloudbaseapp.com/
+- 环境变量通过云托管 `EnvParams` 注入：`JWT_SECRET`、`CORS_ORIGINS`、`DEEPSEEK_API_KEY`、`ALLOW_PUBLIC_REGISTRATION=false`
+- ⚠️ 云托管容器没有挂载持久卷，未配置外部数据库时（默认 SQLite）**每次用新镜像重新部署都会清空用户与业务数据**，仅适合演示；长期留存请使用上面的轻量服务器 + MySQL 方案。
 
 ### Docker 部署
 ```bash
@@ -311,17 +324,22 @@ Docker 部署前请确认 `server_py/.env` 至少包含：
 DEEPSEEK_API_KEY=your_deepseek_api_key
 JWT_SECRET=replace_with_a_long_random_secret
 ADMIN_BOOTSTRAP_USERNAME=admin
+# compose 内置 MySQL，需设置数据库口令（也可在部署命令前 export 同名变量）
+MYSQL_PASSWORD=codemind_pass
+MYSQL_ROOT_PASSWORD=change_me_strong
 ```
 
 启动后访问：
 - 前端：http://localhost:8080
 - 后端健康检查：http://localhost:3001/api/health
 
-生成历史、反馈、使用量、评估和知识库数据保存在 SQLite 数据库 `server_py/data/app.sqlite` 中；Docker 部署时通过 `server-data` volume 持久化。
+生成历史、反馈、使用量、评估和知识库数据默认保存在 MySQL 8 中（Docker 部署通过 `mysql-data` volume 持久化）；设置 `DB_DRIVER=sqlite` 时保存在 `server_py/data/app.sqlite`（`server-data` volume），适合本地快速体验。
 
 > 本地开发（`npm run dev`）与 `docker compose up` 会同时占用 `3001` / `8080`，两者请二选一；若端口似乎被占用，先执行 `docker compose down`。
 
 ### 环境变量配置
+- `DB_DRIVER`: 数据库驱动，`sqlite`（默认，零配置）或 `mysql`
+- `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE`: MySQL 连接配置（`DB_DRIVER=mysql` 时必填，数据库名默认 `codemind`，不存在时自动创建）
 - `PORT`: 服务器端口（默认 3001）
 - `RELOAD`: 仅本地开发使用，设为 `1` 开启热重载（可直接用 `npm run server:dev`）；默认关闭，生产与容器环境不应设置
 - `CORS_ORIGINS`: 允许的前端来源，逗号分隔（默认 `http://localhost:8080`）
@@ -356,10 +374,10 @@ npm run build
 **CodeMind｜AI 代码理解与文档生成助手（Vue 3 + FastAPI + LangChain + DeepSeek + RAG）**（已上线，演示地址见「部署指南」）
 
 - 设计 LLM 生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 校验，使生成结果遵循团队规范且结构可校验。
-- 实现 RAG 检索增强：文档分块向量化存入 SQLite，手写 BM25 与向量召回融合及词面重排，支持本地/远程 Embedding 切换与维度一致性防护，避免知识库静默失效。
+- 实现 RAG 检索增强：文档分块向量化存入 MySQL，手写 BM25 与向量召回融合及词面重排，支持本地/远程 Embedding 切换与维度一致性防护，避免知识库静默失效。
 - 实现语义缓存：请求签名向量相似度命中即复用结果、跳过模型调用（命中请求成本为 0），缓存键含知识库版本防止结果过期；从模型响应读取真实 Token 计量成本。
 - 落地安全与多租户治理：JWT 鉴权、多用户数据隔离与注销级联删除、登录/IP 限流、每日额度、CORS 白名单。
-- 工程化交付：37 项 pytest 测试（鉴权、越权、数据隔离、级联删除）+ GitHub Actions CI + Docker Compose 编排，已部署至腾讯云 CloudBase。
+- 工程化交付：37 项 pytest 测试（鉴权、越权、数据隔离、级联删除）覆盖 SQLite 与 MySQL 双驱动 + GitHub Actions CI + Docker Compose 三容器编排（Nginx / FastAPI / MySQL 8，数据库内网隔离），已部署至腾讯云轻量应用服务器。
 
 ### 面试讲解建议
 

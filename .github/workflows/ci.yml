@@ -15,6 +15,19 @@ jobs:
     name: Backend (FastAPI)
     runs-on: ubuntu-latest
 
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,10 +47,21 @@ jobs:
         working-directory: server_py
         run: python -m compileall -q .
 
-      - name: Run tests
+      - name: Run tests (SQLite)
         working-directory: server_py
         env:
           JWT_SECRET: ci-test-secret-that-is-long-enough-for-hs256
+        run: python -m pytest -q
+
+      - name: Run tests (MySQL)
+        working-directory: server_py
+        env:
+          JWT_SECRET: ci-test-secret-that-is-long-enough-for-hs256
+          TEST_DB_DRIVER: mysql
+          MYSQL_TEST_HOST: 127.0.0.1
+          MYSQL_TEST_PORT: "3306"
+          MYSQL_TEST_USER: root
+          MYSQL_TEST_PASSWORD: root
         run: python -m pytest -q
 
   frontend:

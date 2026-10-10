@@ -1,0 +1,162 @@
+/* 浅色工作台主题
+   目的：把 Element Plus 默认的亮蓝主色换成与登录页一致的品牌色，并统一圆角与描边，
+   让登录页与登录后的工作台看起来是同一个产品。仅覆盖变量，不改动布局。
+*/
+
+:root {
+  /* 品牌主色：与登录页同一色系，整体提亮一档，避免按钮看起来发闷 */
+  --el-color-primary: #6E7DF0;
+  --el-color-primary-light-3: #8A96F4;
+  --el-color-primary-light-5: #A2ACF7;
+  --el-color-primary-light-7: #C6CCFB;
+  --el-color-primary-light-8: #DCE0FD;
+  --el-color-primary-light-9: #F0F2FE;
+  --el-color-primary-dark-2: #5C6AE0;
+
+  /* 统一的圆角 */
+  --el-border-radius-base: 8px;
+}
+
+/* 实心按钮改用明亮渐变，比纯色更有光感；
+   叠加 :not(.is-disabled) 是为了不覆盖禁用态样式 */
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled) {
+  background: linear-gradient(90deg, #5B6AE5, #8C9BFF);
+  border-color: transparent;
+  color: #FFFFFF;
+  box-shadow: 0 6px 16px rgba(91, 106, 229, 0.28);
+}
+
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled):hover,
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled):focus {
+  background: linear-gradient(90deg, #6A79EE, #9BA9FF);
+  border-color: transparent;
+  color: #FFFFFF;
+}
+
+.el-button--success:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled) {
+  background: linear-gradient(90deg, #35C97F, #63DDA4);
+  border-color: transparent;
+  color: #FFFFFF;
+  box-shadow: 0 6px 16px rgba(53, 201, 127, 0.26);
+}
+
+.el-button--success:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled):hover,
+.el-button--success:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled):focus {
+  background: linear-gradient(90deg, #40D488, #77E5B2);
+  border-color: transparent;
+  color: #FFFFFF;
+}
+
+body {
+  background: #F5F7FA;
+}
+
+/* 卡片：柔和描边 + 极轻投影，避免大片纯白显得刺眼 */
+.el-card {
+  border-radius: 12px;
+  border-color: #EBEEF5;
+  box-shadow: 0 1px 3px rgba(16, 30, 70, 0.05);
+}
+
+.el-card__header {
+  border-bottom-color: #F0F2F5;
+  font-weight: 600;
+}
+
+.el-button {
+  border-radius: 8px;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: 8px;
+}
+
+/* 表头浅灰底，与内容区分开 */
+.el-table th.el-table__cell {
+  background: #FAFBFC;
+  color: #606266;
+  font-weight: 600;
+}
+
+.el-dialog {
+  border-radius: 14px;
+}
+
+/* 轻提示（ElMessage）：默认是白底细边 + 灰色图标，偏灰偏硬，
+   改成柔和投影卡片，图标换成带浅色底的圆形徽标 */
+.el-message {
+  /* 位置由 App.vue 的 el-config-provider 统一注入 offset，这里只负责视觉 */
+  width: fit-content;
+  min-width: 0;
+  max-width: 480px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1px solid #EEF1F7;
+  background: #FFFFFF;
+  box-shadow: 0 10px 30px rgba(16, 30, 70, 0.1);
+}
+
+/* 提高一层选择器优先级，否则会被 Element Plus 自带的
+   .el-message .el-message__content 规则覆盖成次要灰 */
+.el-message .el-message__content {
+  color: #303133;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.el-message .el-message__icon {
+  padding: 5px;
+  margin-right: 10px;
+  border-radius: 50%;
+  font-size: 14px;
+}
+
+.el-message--info .el-message__icon {
+  color: #6E7DF0;
+  background: #F0F2FE;
+}
+
+.el-message--success .el-message__icon {
+  color: #2FB874;
+  background: #EAFBF2;
+}
+
+.el-message--warning .el-message__icon {
+  color: #D9973F;
+  background: #FFF6E8;
+}
+
+.el-message--error .el-message__icon {
+  color: #EA6478;
+  background: #FEEDF0;
+}
+
+.el-message .el-message__closeBtn {
+  color: #A8ABB2;
+}
+
+.el-message .el-message__closeBtn:hover {
+  color: #606266;
+}
+
+/* 右上角通知与确认弹窗保持同一套圆角与投影 */
+.el-notification {
+  border-radius: 14px;
+  border-color: #EEF1F7;
+  box-shadow: 0 12px 32px rgba(16, 30, 70, 0.12);
+}
+
+.el-notification__title {
+  color: #303133;
+  font-weight: 600;
+}
+
+.el-notification__content {
+  color: #606266;
+}
+
+.el-message-box {
+  border-radius: 14px;
+}

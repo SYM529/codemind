@@ -389,16 +389,6 @@ npm run lint
 npm run build
 ```
 
-## 简历项目描述
-
-**CodeMind｜AI 代码理解与文档生成助手（Vue 3 + FastAPI + LangChain + DeepSeek + RAG）**（已上线，演示地址见「部署指南」）
-
-- 设计 LLM 生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 校验，使生成结果遵循团队规范且结构可校验。
-- 实现 RAG 检索增强：文档分块向量化存入 MySQL，手写 BM25 与向量召回融合及词面重排，支持本地/远程 Embedding 切换与维度一致性防护，避免知识库静默失效。
-- 实现语义缓存：请求签名向量相似度命中即复用结果、跳过模型调用（命中请求成本为 0），缓存键含知识库版本防止结果过期；从模型响应读取真实 Token 计量成本。
-- 落地安全与多租户治理：JWT 鉴权、多用户数据隔离与注销级联删除、登录/IP 限流、每日额度、CORS 白名单。
-- 工程化交付：37 项 pytest 测试（鉴权、越权、数据隔离、级联删除）覆盖 SQLite 与 MySQL 双驱动 + GitHub Actions CI + Docker Compose 三容器编排（Nginx / FastAPI / MySQL 8，数据库内网隔离），已部署至腾讯云轻量应用服务器。
-
 ## 贡献指南
 
 欢迎提交 Issue 和 Pull Request 来改进项目！

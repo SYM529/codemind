@@ -148,6 +148,8 @@ flowchart LR
 7. **数据安全隔离**：生成历史、反馈、使用量、评估、缓存和知识库数据都通过 `user_id` 隔离，注销账户时级联删除。
 8. **工程化**：pytest 单元测试与 API 集成测试（未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度防护、未配置 Key 时 503 降级），CI 同时覆盖 SQLite 与 MySQL 双驱动；GitHub Actions（后端双驱动测试 + 前端 lint/构建）、Docker Compose 三容器编排（Nginx + FastAPI + MySQL 8，数据库仅内网可达）。
 
+> 📋 开发与部署过程中的真实问题复盘（MySQL 方言适配 Bug、SSE 异常吞噬、配置验证方法等 7 个案例）见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
+
 ## 已知限制与演进路线
 
 以下两点是小规模（个人/团队）场景下的**主动设计取舍**，不是缺陷；面试时建议主动讲清楚"为什么这样做、数据量上来后怎么演进"。

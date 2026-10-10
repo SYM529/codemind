@@ -11,6 +11,7 @@ stay driver-agnostic.
 """
 import json
 import os
+import re
 from pathlib import Path
 
 DB_DRIVER = os.getenv("DB_DRIVER", "sqlite").strip().lower()
@@ -64,11 +65,10 @@ class MySQLConn:
     @staticmethod
     def _translate(sql: str) -> str:
         s = sql.strip()
-        upper = s.upper()
-        if upper.startswith("INSERT OR IGNORE"):
-            s = "INSERT IGNORE" + s[len("INSERT OR IGNORE"):]
-        elif upper.startswith("INSERT OR REPLACE"):
-            s = "REPLACE INTO" + s[len("INSERT OR REPLACE"):]
+        if re.match(r"(?i)^INSERT\s+OR\s+IGNORE\b", s):
+            s = re.sub(r"(?i)^INSERT\s+OR\s+IGNORE(\s+INTO\b)?", "INSERT IGNORE INTO", s, count=1)
+        elif re.match(r"(?i)^INSERT\s+OR\s+REPLACE\b", s):
+            s = re.sub(r"(?i)^INSERT\s+OR\s+REPLACE(\s+INTO\b)?", "REPLACE INTO", s, count=1)
         return s.replace("?", "%s")
 
     def execute(self, sql, params=()):

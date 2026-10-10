@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+**/__pycache__/
+*.pyc
+server_py/.pytest_cache/
+server_py/.ruff_cache/
+
+# Environment files (never commit secrets)
+.env
+.env.*
+!.env.example
+server/.env
+server_py/.env
+# client/.env only holds the public API base URL
+!client/.env
+
+# SQLite database, WAL files and runtime logs (local runtime data)
+server/data/
+server_py/data/
+
+# Build output
+client/dist/
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE / tooling
+.codebuddy/
+.playwright-cli/

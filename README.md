@@ -2,6 +2,20 @@
 
 CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结合 Python AST、LangChain、RAG 检索增强、结构化输出校验和可观测性，支持代码注释、代码解释、重构建议、历史管理和多用户数据隔离。
 
+## 界面预览
+
+**代码结构分析**（Python AST / 多语言解析，自动识别函数、类、变量与行号）：
+
+![代码结构分析](docs/screenshots/workspace-analysis.png)
+
+**AI 生成 JSDoc 注释**（SSE 流式生成 + Pydantic 结构化校验）：
+
+![AI 生成注释](docs/screenshots/ai-comment.png)
+
+**RAG 知识库**（文档分块向量化，BM25 + 向量混合检索与词面重排，相关度排序）：
+
+![RAG 知识库](docs/screenshots/rag-knowledge-base.png)
+
 ## 项目概述
 
 这是一个面向 AI 应用开发的全栈项目，重点展示 LLM 调用编排、RAG 检索增强、流式响应、结构化结果校验、质量评估、成本控制、JWT 鉴权和 MySQL/SQLite 双驱动持久化等工程能力。

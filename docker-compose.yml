@@ -39,7 +39,9 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-codemind_pass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-codemind}
     ports:
-      - "3002:3001"
+      # 只绑回环供宿主机调试：前端 nginx 已按容器网络反代 /api/ 到 server:3001，
+      # 公网访问走 8081 前端即可；API 直连端口暴露公网等于绕过前端限流
+      - "127.0.0.1:3002:3001"
     volumes:
       - server-data:/app/data
     restart: unless-stopped

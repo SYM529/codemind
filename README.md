@@ -176,7 +176,7 @@ flowchart LR
 
 指标随生成历史保留，用户侧经 `/api/ai/evaluation` 查询个人聚合，管理员看板 `/api/admin/metrics` 可按全局与时间维度查看。
 
-**真实故障复盘**：开发与部署过程中的 7 个真实问题（MySQL 方言适配 Bug、SSE 异常吞噬、配置验证等）的根因与修复记录在 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
+**真实故障复盘**：开发与部署过程中的 7 个真实问题的根因与修复记录在 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)——例如 MySQL 方言适配 Bug（INSERT OR REPLACE 被转出双重 INTO）、SSE 流式接口把异常吞成事件流导致前端无感知断流、配置缺失时启动静默失败。
 ## 已知限制与演进路线
 
 以下两点是小规模（个人/团队）场景下的**主动设计取舍**，不是缺陷；面试时建议主动讲清楚"为什么这样做、数据量上来后怎么演进"。

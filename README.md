@@ -171,6 +171,21 @@ flowchart LR
 
 **42 项 pytest 测试**（本地 `python -m pytest -q`，CI 自动运行），覆盖：未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度一致性防护、未配置 Key 时 503 降级。CI 同时在 SQLite 与 MySQL 双驱动上执行（GitHub Actions，状态见页首徽章）。
 
+测试分布：
+
+| 测试文件 | 用例数 | 覆盖重点 |
+| --- | --- | --- |
+| `test_ai_comment_service.py` | 7 | LLM 生成编排、JSON 清洗与围栏容错 |
+| `test_api.py` | 6 | API 集成：鉴权链、额度、503 降级 |
+| `test_database_dialect.py` | 5 | SQLite→MySQL 方言转换（`INSERT OR REPLACE` 等） |
+| `test_admin_user_management.py` | 5 | RBAC、禁用/启用、最后一个管理员保护 |
+| `test_rag.py` | 4 | 分块、索引、混合检索与维度防护 |
+| `test_code_analyzer.py` | 4 | Python AST / JS / Java 结构解析 |
+| `test_cache.py` | 4 | 语义缓存命中、失效与维度不一致清空 |
+| `test_style_guides.py` | 3 | 团队规范样例入库与召回 |
+| `test_evaluation.py` | 2 | 覆盖率与行号有效率计算 |
+| `test_auth.py` | 2 | JWT 签发/校验、密码哈希 |
+
 **生成质量自动评估**：每次 AI 生成会自动计算并落库两条指标——
 
 - 函数覆盖率：生成的注释覆盖了结构分析识别出的多少函数
@@ -178,7 +193,20 @@ flowchart LR
 
 指标随生成历史保留，用户侧经 `/api/ai/evaluation` 查询个人聚合，管理员看板 `/api/admin/metrics` 可按全局与时间维度查看。
 
+**真实运行数据**（开发与联调环境，13 次真实 DeepSeek 生成）：
+
+| 指标 | 数值 | 说明 |
+| --- | --- | --- |
+| 函数覆盖率 | **100%**（13/13 次生成） | 每次生成的注释均覆盖识别出的全部函数 |
+| 行号有效率 | **100%** | 注释行号引用与真实代码结构吻合 |
+| Pydantic 结构化校验 | **13/13 通过** | 流式输出经清洗后全部通过结构校验 |
+| 语义缓存 | 8 条记录 / **5 次命中** | 相似请求直接复用，跳过模型调用 |
+| Token 计量 | 输入 3,567 / 输出 5,490 | 真实 `usage`，成本合计 **$0.007** |
+
+数据来源：`/api/ai/evaluation`、`/api/ai/cache/stats`、`/api/ai/usage`。
+
 **真实故障复盘**：开发与部署过程中的 7 个真实问题的根因与修复记录在 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)——例如 MySQL 方言适配 Bug（INSERT OR REPLACE 被转出双重 INTO）、SSE 流式接口把异常吞成事件流导致前端无感知断流、配置缺失时启动静默失败。
+
 ## 已知限制与演进路线
 
 以下两点是小规模（个人/团队）场景下的**主动设计取舍**，不是缺陷；面试时建议主动讲清楚"为什么这样做、数据量上来后怎么演进"。

@@ -22,6 +22,19 @@ CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结
 
 这是一个面向 AI 应用开发的全栈项目，重点展示 LLM 调用编排、RAG 检索增强、流式响应、结构化结果校验、质量评估、成本控制、JWT 鉴权和 MySQL/SQLite 双驱动持久化等工程能力。
 
+## 快速体验（3 分钟）
+
+```bash
+git clone https://github.com/SYM529/codemind.git
+cd codemind
+# 参考 server_py/.env.example 创建 server_py/.env，至少填写：
+#   DEEPSEEK_API_KEY=sk-xxxx          # DeepSeek 密钥
+#   JWT_SECRET=一段随机长字符串       # 登录令牌签名密钥
+#   MYSQL_PASSWORD / MYSQL_ROOT_PASSWORD   # compose 内置 MySQL 口令
+docker compose up -d --build
+```
+
+打开 http://localhost:8080 即可使用：注册 → 载入知识库示例 → 粘贴代码生成注释。MySQL 8 由 compose 编排（数据落在 mysql-data 卷持久化）；想零配置本地跑（SQLite），见下文「安装和运行」。
 ## 系统特性
 
 - 🤖 **智能注释生成** - 基于 LLM 与代码结构分析自动生成函数级注释
@@ -152,6 +165,18 @@ flowchart LR
 
 > 📋 开发与部署过程中的真实问题复盘（MySQL 方言适配 Bug、SSE 异常吞噬、配置验证方法等 7 个案例）见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
 
+## 测试与质量评估
+
+**42 项 pytest 测试**（本地 `python -m pytest -q`，CI 自动运行），覆盖：未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度一致性防护、未配置 Key 时 503 降级。CI 同时在 SQLite 与 MySQL 双驱动上执行（GitHub Actions，状态见页首徽章）。
+
+**生成质量自动评估**：每次 AI 生成会自动计算并落库两条指标——
+
+- 函数覆盖率：生成的注释覆盖了结构分析识别出的多少函数
+- 行号有效率：注释中的行号引用与真实代码结构吻合的比例
+
+指标随生成历史保留，用户侧经 `/api/ai/evaluation` 查询个人聚合，管理员看板 `/api/admin/metrics` 可按全局与时间维度查看。
+
+**真实故障复盘**：开发与部署过程中的 7 个真实问题（MySQL 方言适配 Bug、SSE 异常吞噬、配置验证等）的根因与修复记录在 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
 ## 已知限制与演进路线
 
 以下两点是小规模（个人/团队）场景下的**主动设计取舍**，不是缺陷；面试时建议主动讲清楚"为什么这样做、数据量上来后怎么演进"。

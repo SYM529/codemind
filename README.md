@@ -1,5 +1,7 @@
 # CodeMind｜AI 代码理解与文档生成助手
 
+[![CI](https://github.com/SYM529/codemind/actions/workflows/ci.yml/badge.svg)](https://github.com/SYM529/codemind/actions/workflows/ci.yml)
+
 CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结合 Python AST、LangChain、RAG 检索增强、结构化输出校验和可观测性，支持代码注释、代码解释、重构建议、历史管理和多用户数据隔离。
 
 ## 界面预览

@@ -4,6 +4,14 @@
 
 CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结合 Python AST、LangChain、RAG 检索增强、结构化输出校验和可观测性，支持代码注释、代码解释、重构建议、历史管理和多用户数据隔离。
 
+后端驱动完整生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 结构化校验；前端提供代码工作台、RAG 知识库与多用户数据隔离；`tests/` 提供 42 项 SQLite/MySQL 双驱动测试，GitHub Actions 自动执行。
+
+开发周期：2026-08 至 2026-10 持续开发，2026-10 统一推送至 GitHub。
+
+**在线演示**：http://124.220.135.176:8081 —— 部署于腾讯云轻量服务器（Docker Compose 三容器：Nginx / FastAPI / MySQL 8），公网可访问（注册已关闭，如需试用账号可通过简历联系方式获取）。
+
+代码结构、生成质量与成本的真实运行数据见下文「测试与质量评估」；开发部署过程中的问题复盘见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
+
 ## 界面预览
 
 **代码结构分析**（Python AST / 多语言解析，自动识别函数、类、变量与行号）：

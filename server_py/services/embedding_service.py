@@ -86,7 +86,15 @@ def _api_embed(texts: List[str]) -> np.ndarray:
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         body = json.loads(response.read().decode("utf-8"))
-    vectors = [item["embedding"] for item in body["data"]]
+    data = body.get("data") or []
+    # 条数必须与请求一致：少了或多了都会让向量与切片静默错位，比直接报错难查得多
+    if len(data) != len(texts):
+        raise ValueError(
+            f"Embedding 接口返回条数与请求不一致：请求 {len(texts)} 条，返回 {len(data)} 条"
+        )
+    # OpenAI 兼容接口的返回项带 index，按其排序后再取值，不依赖服务端的返回顺序
+    ordered = sorted(data, key=lambda item: item.get("index", 0))
+    vectors = [item["embedding"] for item in ordered]
     matrix = np.asarray(vectors, dtype=np.float32)
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     norms[norms == 0] = 1.0

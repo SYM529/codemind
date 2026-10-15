@@ -52,6 +52,58 @@ api.interceptors.response.use(
   }
 )
 
+// 通用 SSE 请求：生成注释与项目问答共用同一套事件解析（token / complete / error）
+async function streamPost(path, data, onEvent) {
+  const baseURL = process.env.VUE_APP_API_BASE_URL || '/api'
+  const response = await fetch(`${baseURL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(localStorage.getItem('authToken')
+        ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
+        : {})
+    },
+    body: JSON.stringify(data)
+  })
+
+  if (!response.ok) {
+    let payload = {}
+    try {
+      payload = await response.json()
+    } catch (error) {
+      payload = {}
+    }
+    const requestError = new Error(payload.error?.message || 'AI 服务请求失败')
+    requestError.code = payload.error?.code || 'AI_REQUEST_FAILED'
+    throw requestError
+  }
+
+  if (!response.body) {
+    throw new Error('当前浏览器不支持流式响应')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let isDone = false
+  while (!isDone) {
+    const { value, done } = await reader.read()
+    isDone = done
+    if (done) continue
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() || ''
+
+    events.forEach((eventText) => {
+      const eventName = eventText.match(/^event: (.+)$/m)?.[1]
+      const dataLine = eventText.match(/^data: (.+)$/m)?.[1]
+      if (eventName && dataLine) {
+        onEvent(eventName, JSON.parse(dataLine))
+      }
+    })
+  }
+}
+
 // API方法
 const commentApi = {
   register: (data) => api.post('/auth/register', data),
@@ -65,56 +117,7 @@ const commentApi = {
   // 基于 LangChain 和大模型生成结构化注释
   generateAIComments: (data) => api.post('/ai/generate-comments', data),
 
-  generateAICommentsStream: async (data, onEvent) => {
-    const baseURL = process.env.VUE_APP_API_BASE_URL || '/api'
-    const response = await fetch(`${baseURL}/ai/generate-comments/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(localStorage.getItem('authToken')
-          ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
-          : {})
-      },
-      body: JSON.stringify(data)
-    })
-
-    if (!response.ok) {
-      let payload = {}
-      try {
-        payload = await response.json()
-      } catch (error) {
-        payload = {}
-      }
-      const requestError = new Error(payload.error?.message || 'AI 服务请求失败')
-      requestError.code = payload.error?.code || 'AI_REQUEST_FAILED'
-      throw requestError
-    }
-
-    if (!response.body) {
-      throw new Error('当前浏览器不支持流式响应')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let isDone = false
-    while (!isDone) {
-      const { value, done } = await reader.read()
-      isDone = done
-      if (done) continue
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split('\n\n')
-      buffer = events.pop() || ''
-
-      events.forEach((eventText) => {
-        const eventName = eventText.match(/^event: (.+)$/m)?.[1]
-        const dataLine = eventText.match(/^data: (.+)$/m)?.[1]
-        if (eventName && dataLine) {
-          onEvent(eventName, JSON.parse(dataLine))
-        }
-      })
-    }
-  },
+  generateAICommentsStream: (data, onEvent) => streamPost('/ai/generate-comments/stream', data, onEvent),
 
   // 获取后端 AI 配置状态（不返回密钥）
   getAIConfig: () => api.get('/ai/config'),
@@ -144,6 +147,23 @@ const commentApi = {
   searchRag: (data) => api.post('/rag/search', data),
   getRagStats: () => api.get('/rag/stats'),
   seedRag: () => api.post('/rag/seed'),
+
+  // 项目级代码理解（ZIP 上传 + 项目知识库）
+  getProjects: () => api.get('/projects'),
+  getProject: (projectId) => api.get(`/projects/${projectId}`),
+  getProjectFiles: (projectId) => api.get(`/projects/${projectId}/files`),
+  getProjectFile: (projectId, documentId) => api.get(`/projects/${projectId}/files/${documentId}`),
+  deleteProject: (projectId) => api.delete(`/projects/${projectId}`),
+  searchProject: (projectId, data) => api.post(`/projects/${projectId}/search`, data),
+  askProject: (projectId, data, onEvent) => streamPost(`/projects/${projectId}/ask`, data, onEvent),
+  uploadProject: (formData, onProgress) => api.post('/projects', formData, {
+    // 实例默认头是 application/json，axios 1.x 在该头下会把 FormData 序列化成 JSON；
+    // 必须显式声明 multipart，浏览器才会补上 boundary
+    headers: { 'Content-Type': 'multipart/form-data' },
+    // 上传与解析可能较久，单独放宽超时
+    timeout: 300000,
+    onUploadProgress: onProgress
+  }),
   
   // 分析代码
   analyzeCode: (data) => api.post('/analyze-code', data),

@@ -7,6 +7,8 @@ const Register = () => import(/* webpackChunkName: "auth" */ '../views/Register.
 const Profile = () => import(/* webpackChunkName: "profile" */ '../views/Profile.vue')
 const Admin = () => import(/* webpackChunkName: "admin" */ '../views/Admin.vue')
 const Knowledge = () => import(/* webpackChunkName: "knowledge" */ '../views/Knowledge.vue')
+const Project = () => import(/* webpackChunkName: "project" */ '../views/Project.vue')
+const ProjectDetail = () => import(/* webpackChunkName: "project" */ '../views/ProjectDetail.vue')
 
 const routes = [
   {
@@ -25,6 +27,18 @@ const routes = [
     path: '/knowledge',
     name: 'Knowledge',
     component: Knowledge,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects',
+    name: 'Project',
+    component: Project,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId',
+    name: 'ProjectDetail',
+    component: ProjectDetail,
     meta: { requiresAuth: true }
   },
   {

@@ -39,6 +39,13 @@
             <el-button v-if="$store.state.auth" type="text" @click="$router.push('/knowledge')">
               知识库
             </el-button>
+            <el-button
+              v-if="$store.state.auth"
+              type="text"
+              :class="{ active: $route.path.startsWith('/projects') }"
+              @click="$router.push('/projects')">
+              项目理解
+            </el-button>
             <el-button v-if="$store.state.auth?.role === 'admin'" type="text" @click="$router.push('/admin')">
               管理看板
             </el-button>

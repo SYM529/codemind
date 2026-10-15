@@ -35,4 +35,6 @@ Thumbs.db
 
 # Personal documents (never push to public repo)
 宋雨铭-简历-AI应用开发工程师-v3.docx
+# 任何文件名含「简历」的文档（含后续版本与改前备份），避免误提交含手机号邮箱的简历
+*简历*.docx
 docs/CodeMind面试准备手册.docx

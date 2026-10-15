@@ -26,6 +26,34 @@ RERANK_POOL_FACTOR = 4
 # 单次向量化的最大条数：批次过大会撑爆远程 Embedding 接口的请求体，
 # 也会让本地哈希向量一次性占用过多内存
 EMBED_BATCH_SIZE = 64
+# 中文按单字切词时，这些高频虚词几乎出现在任何一段中文文本里。不把它们摘掉的话，
+# 词面覆盖率会被抬到接近 1：既让"证据门槛"形同虚设，也会在重排时把实现代码挤到文档后面。
+_CJK_STOP_CHARS = frozenset(
+    "的了在是我你他她它这那们和与或有不就都而及其为以于之上中里吗呢吧啊呀哦"
+    "个之也还就都很把被从对能给让使所则若且但并等什怎谓该此这些那些哪个什么怎么"
+)
+# 来源先验：项目级问答默认问的是"实现在哪"，所以实现代码权重最高；
+# 文档常含架构说明，仍有价值但略降；测试文件虽然同样会命中关键词，
+# 但极少是"实现位置"的权威来源，降权最多（测量见 2026-10 的检索对比）。
+SOURCE_KIND_WEIGHTS = {"code": 1.15, "doc": 0.95, "test": 0.5}
+
+
+def _content_tokens(text: str) -> set:
+    """用于词面覆盖率的内容词集合（已去掉中文单字虚词）。"""
+    return {token for token in _tokenize(text) if token not in _CJK_STOP_CHARS}
+
+
+def source_kind(rel_path: Optional[str], language: Optional[str]) -> str:
+    """按来源给 Chunk 分类，供检索时的先验加权使用。"""
+    if (language or "") == "text":
+        return "doc"
+    path = (rel_path or "").lower()
+    if not path:
+        return "code"
+    name = path.rsplit("/", 1)[-1]
+    if "/tests/" in path or path.startswith("tests/") or name.startswith("test_") or name.endswith("_test.py"):
+        return "test"
+    return "code"
 
 
 def _tokenize(text: str) -> List[str]:
@@ -477,7 +505,9 @@ def search(
 
     contents = [r["content"] for r in rows]
     query_tokens = _tokenize(query)
-    query_set = set(query_tokens)
+    # 词面覆盖率用"内容词"计算（去掉中文单字虚词），否则一句中文问题会和任何中文文本
+    # 都产生高覆盖率，把文档顶到实现代码前面
+    query_set = _content_tokens(query)
     doc_token_lists = [_tokenize(c) for c in contents]
 
     matrix = np.asarray([json.loads(r["embedding_json"]) for r in rows], dtype=np.float32)
@@ -498,18 +528,22 @@ def search(
 
     reranked = []
     for index in pool:
-        overlap = _lexical_overlap(query_set, set(doc_token_lists[index]))
-        rerank_score = 0.5 * float(combined[index]) + 0.5 * overlap
+        overlap = _lexical_overlap(query_set, _content_tokens(contents[index]))
+        # 先按综合分与词面覆盖率重排，再乘来源先验：实现代码优先于文档，测试文件最后
+        kind = source_kind(rows[index]["rel_path"], rows[index]["language"])
+        rerank_score = (0.5 * float(combined[index]) + 0.5 * overlap) * SOURCE_KIND_WEIGHTS[kind]
         reranked.append((int(index), float(combined[index]), overlap, rerank_score))
     reranked.sort(key=lambda item: item[3], reverse=True)
 
     results = []
     for index, combined_score, overlap, rerank_score in reranked[:top_k]:
         row = rows[index]
+        kind = source_kind(row["rel_path"], row["language"])
         results.append({
             "documentId": row["document_id"],
             "title": row["title"],
             "language": row["language"],
+            "sourceKind": kind,
             "chunkIndex": row["chunk_index"],
             "score": round(combined_score, 4),
             "rerankScore": round(rerank_score, 4),

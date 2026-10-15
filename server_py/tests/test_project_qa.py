@@ -320,3 +320,55 @@ def test_ask_quota_exceeded_returns_429(monkeypatch):
     resp = _ask(token, project_id, "login")
     assert resp.status_code == 429
     assert resp.json()["error"]["code"] == "DAILY_QUOTA_EXCEEDED"
+
+
+def test_ask_reports_embedding_dimension_mismatch_clearly():
+    """切换 Embedding 模型后，旧项目必须给出可执行的提示，而不是笼统的“无法确定”。"""
+    token = _register("qa_dim", "qa_dim@example.com")
+    uid = _user_id(token)
+    public_id = project_service.new_public_id()
+    project_service.create_project(uid, public_id, "维度不一致", "dim.zip")
+    row = project_service.fetch_project_row(uid, public_id)
+    timestamp = "2026-01-01T00:00:00+00:00"
+
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO rag_documents(user_id,title,source,language,char_count,chunk_count,"
+            "project_id,rel_path,line_count,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (uid, "legacy.py", "project", "python", 20, 1, row["id"], "legacy.py", 1, timestamp),
+        )
+        document_id = conn.execute(
+            "SELECT id FROM rag_documents WHERE project_id=?", (row["id"],)
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO rag_chunks(document_id,user_id,chunk_index,content,embedding_json,"
+            "project_id,rel_path,language,start_line,end_line,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (document_id, uid, 0, "def login(): pass", json.dumps([0.1] * 32),
+             row["id"], "legacy.py", "python", 1, 1, timestamp),
+        )
+        conn.execute(
+            "UPDATE projects SET status='ready', file_count=1, indexed_file_count=1, chunk_count=1"
+            " WHERE id=?",
+            (row["id"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        resp = _ask(token, public_id, "login")
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        assert events[-1][0] == "error", events
+        assert events[-1][1]["code"] == "EMBEDDING_DIM_MISMATCH"
+        assert "重新上传" in events[-1][1]["message"]
+    finally:
+        conn = get_conn()
+        try:
+            conn.execute("DELETE FROM rag_chunks WHERE project_id=?", (row["id"],))
+            conn.execute("DELETE FROM rag_documents WHERE project_id=?", (row["id"],))
+            conn.execute("DELETE FROM projects WHERE id=?", (row["id"],))
+            conn.commit()
+        finally:
+            conn.close()

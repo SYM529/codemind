@@ -6,11 +6,13 @@
 2. 排序缺少"这是实现代码"的先验，文档与测试文件会压过真正的实现。
 """
 import pytest
+import json
 
 from database import get_conn
 from services import code_chunker, project_service, rag_service
 
 USER_ID = 7373
+DIM_MISMATCH_USER = 7374
 
 # 同一段代码分别以"文档"和"测试"的身份入库，用来隔离来源权重的影响
 SAMPLE_CODE = "\n".join([
@@ -112,3 +114,58 @@ def test_code_outranks_test_file_for_identical_content(project_id):
 
     assert hits[0]["relPath"] == "server_py/routes/auth.py"
     assert hits[1]["sourceKind"] == "test"
+
+
+# --- 维度不一致必须显式暴露（切换 Embedding 模型后的典型场景）---
+
+
+def _seed_legacy_dimension_chunk(dim: int = 32) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO rag_documents(user_id,title,source,language,char_count,chunk_count,created_at)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (DIM_MISMATCH_USER, "legacy", "manual", "text", 4, 1, "2026-01-01T00:00:00+00:00"),
+        )
+        document_id = conn.execute(
+            "SELECT id FROM rag_documents WHERE user_id=?", (DIM_MISMATCH_USER,)
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO rag_chunks(document_id,user_id,chunk_index,content,embedding_json,created_at)"
+            " VALUES(?,?,?,?,?,?)",
+            (document_id, DIM_MISMATCH_USER, 0, "legacy chunk", json.dumps([0.1] * dim),
+             "2026-01-01T00:00:00+00:00"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _cleanup_dim_mismatch_user() -> None:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM rag_chunks WHERE user_id=?", (DIM_MISMATCH_USER,))
+        conn.execute("DELETE FROM rag_documents WHERE user_id=?", (DIM_MISMATCH_USER,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_dimension_mismatch_can_be_raised_to_caller():
+    _seed_legacy_dimension_chunk()
+    try:
+        with pytest.raises(rag_service.EmbeddingDimensionError):
+            rag_service.build_context(DIM_MISMATCH_USER, "login", raise_on_error=True)
+    finally:
+        _cleanup_dim_mismatch_user()
+
+
+def test_dimension_mismatch_still_degrades_by_default():
+    """默认行为不能变：单文件生成链路依赖"检索失败也不打断生成"。"""
+    _seed_legacy_dimension_chunk()
+    try:
+        context, metadata = rag_service.build_context(DIM_MISMATCH_USER, "login")
+        assert context == ""
+        assert metadata == []
+    finally:
+        _cleanup_dim_mismatch_user()

@@ -463,13 +463,6 @@ Authorization: Bearer <token>
     tar czf /backup/mysql-backup-$(date +%F).tar.gz -C /data .
   ```
 
-### 备选：腾讯云 CloudBase 云托管 + 静态托管
-
-- 后端 API（云托管容器 `codemind-server`）：https://codemind-server-317709-11-1493196349.sh.run.tcloudbase.com（1C2G，`MinNum=1`，容器端口 `3001`）
-- 前端（静态托管）：https://codemind-d0g51r57g2a685828-1493196349.tcloudbaseapp.com/
-- 环境变量通过云托管 `EnvParams` 注入：`JWT_SECRET`、`CORS_ORIGINS`、`DEEPSEEK_API_KEY`、`ALLOW_PUBLIC_REGISTRATION=false`
-- ⚠️ 云托管容器没有挂载持久卷，未配置外部数据库时（默认 SQLite）**每次用新镜像重新部署都会清空用户与业务数据**，仅适合演示；长期留存请使用上面的轻量服务器 + MySQL 方案。
-
 ### Docker 部署
 ```bash
 # 复制并填写 DeepSeek 配置

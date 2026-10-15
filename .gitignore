@@ -31,3 +31,8 @@ Thumbs.db
 # IDE / tooling
 .codebuddy/
 .playwright-cli/
+.idea/
+
+# Personal documents (never push to public repo)
+宋雨铭-简历-AI应用开发工程师-v3.docx
+docs/CodeMind面试准备手册.docx

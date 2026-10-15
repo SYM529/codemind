@@ -1,0 +1,81 @@
+<html style="margin:0;padding:0;">
+<title>CodeMind 项目理解地图</title>
+<div style="max-width:920px;margin:0 auto;padding:18px 16px 8px;font-family:'Microsoft YaHei',system-ui,sans-serif;color:#333;font-size:15px;line-height:1.6;box-sizing:border-box;">
+  <div style="font-size:22px;font-weight:700;margin-bottom:4px;">CodeMind 一条请求的完整旅程</div>
+  <div style="color:#666;margin-bottom:18px;">锚点：用户在代码工作台粘贴一段代码 → 点「生成注释」→ 结果流式上屏。数字 = 数据流动顺序，也是建议的读码顺序。</div>
+
+  <!-- 前端 -->
+  <div style="border-left:5px solid #5b9bd5;background:#e8f2fb;padding:10px 12px;border-radius:6px;margin-bottom:10px;">
+    <div style="font-weight:700;color:#2a6496;">前端 · Vue3（client/）</div>
+    <div style="font-size:15px;">【1】<b>views/Home.vue</b> 粘贴代码、点生成 → <b>api/index.js</b> 发起 SSE 流式请求 POST /api/ai/generate-comments/stream</div>
+  </div>
+  <div style="text-align:center;color:#999;font-size:18px;">↓</div>
+
+  <!-- 路由 -->
+  <div style="border-left:5px solid #2e9e8f;background:#e6f6f3;padding:10px 12px;border-radius:6px;margin:10px 0;">
+    <div style="font-weight:700;color:#1b7a6f;">请求入口 · FastAPI（server_py/）</div>
+    <div style="font-size:15px;">【2】<b>routes/ai.py</b> 第一站：JWT 鉴权（401）→ 每日额度（429）→ 代码长度限制（413）→ 转发给服务层</div>
+    <div style="font-size:15px;">【3】<b>services/code_analyzer.py</b> 代码结构分析：Python 用 AST，JS/Java 用正则，识别函数、类、行号</div>
+  </div>
+  <div style="text-align:center;color:#999;font-size:18px;">↓</div>
+
+  <!-- 缓存分支 -->
+  <div style="border:2px dashed #d98324;border-radius:6px;padding:10px 12px;margin:10px 0;background:#fdf7ec;">
+    <div style="font-weight:700;color:#b05e00;">【4】services/cache_service.py · 语义缓存（分叉点）</div>
+    <div style="font-size:15px;">请求签名做向量相似度匹配：<b>相似度 ≥ 0.98 命中</b> → 直接复用历史结果，<span style="font-weight:700;color:#b05e00;">跳过 5-8 全部 AI 调用</span>；未命中才继续往下。</div>
+    <div style="font-size:15px;color:#b05e00;">虚线捷径：缓存命中 → 直接到【8】记录本次为 cache 来源。</div>
+  </div>
+  <div style="text-align:center;color:#999;font-size:18px;">↓ 未命中</div>
+
+  <!-- 服务层 -->
+  <div style="border-left:5px solid #6aa84f;background:#eef7e6;padding:10px 12px;border-radius:6px;margin:10px 0;">
+    <div style="font-weight:700;color:#4d7c2f;">核心生成链路 · 服务层</div>
+    <div style="font-size:15px;">【5】<b>services/rag_service.py</b> RAG 混合检索：BM25 + 向量召回加权融合（0.65/0.35）→ 词面重排 → <b>build_context</b> 拼成「片段N」注入文本</div>
+    <div style="font-size:15px;">【6】<b>services/ai_comment_service.py</b> LangChain 组装 Prompt（代码+结构分析+RAG 上下文）→ DeepSeek SSE 逐 token 流式生成</div>
+    <div style="font-size:15px;">【7】<b>models.py</b> JSON 清洗 + Pydantic 结构化校验：容忍模型输出 Markdown 围栏/顶层数组</div>
+  </div>
+  <div style="text-align:center;color:#999;font-size:18px;">↓</div>
+
+  <!-- 落库 -->
+  <div style="border-left:5px solid #d98324;background:#fdf2e6;padding:10px 12px;border-radius:6px;margin:10px 0;">
+    <div style="font-weight:700;color:#a85a00;">落库与观测 · 数据层</div>
+    <div style="font-size:15px;">【8】<b>evaluation_service.py</b> 算函数覆盖率/行号有效率 → <b>usage_service.py</b> 记真实 Token 与成本 → <b>generation_history_service.py</b> 存历史（都按 user_id 隔离）</div>
+    <div style="font-size:15px;">【9】<b>database.py</b> MySQL/SQLite 双驱动：生产 MySQL 8，本地开发零配置回退 SQLite（环境变量 DB_DRIVER 切换）</div>
+  </div>
+  <div style="text-align:center;color:#999;font-size:18px;">↓</div>
+
+  <!-- 终点 -->
+  <div style="border-left:5px solid #5b9bd5;background:#e8f2fb;padding:10px 12px;border-radius:6px;margin:10px 0 4px;">
+    <div style="font-weight:700;color:#2a6496;">回到前端</div>
+    <div style="font-size:15px;">DebugPanel 流式展示 + RAG 命中/缓存状态/成本可视化；历史、用量、质量评估和管理员看板（views/History.vue、Admin.vue）均可查。</div>
+  </div>
+
+  <!-- 读码顺序 -->
+  <div style="margin-top:26px;background:#f7f7f7;border-radius:8px;padding:14px 16px;">
+    <div style="font-weight:700;font-size:17px;margin-bottom:10px;">推荐读码顺序（不要按文件列表啃，按这条链走两遍）</div>
+    <div style="font-size:15px;">
+      ① <b>README.md</b> 全文——它就是你的地图，架构图、流程图、已知局限全在里面<br/>
+      ② <b>main.py + config.py</b>——入口和配置：启动时建表、读环境变量、挂路由<br/>
+      ③ <b>routes/ai.py</b>——请求进来的第一站，看校验和转发<br/>
+      ④ <b>ai_comment_service.py</b>——整条链的心脏，看 Prompt 怎么拼、流式怎么发<br/>
+      ⑤ <b>rag_service.py + embedding_service.py</b>——RAG 本体（刚才讲过）<br/>
+      ⑥ <b>cache_service.py → database.py → models.py</b>——缓存与数据模型<br/>
+      ⑦ <b>client/src/views/Home.vue + api/index.js</b>——前端怎么调、SSE 怎么收<br/>
+      ⑧ <b>docs/TROUBLESHOOTING.md</b>——真实踩过的坑，面试时是现成素材<br/>
+      然后：本地把服务跑起来（docker compose up 或直接 python main.py），<b>打断点/加 print，实际发一次请求</b>，观察每层收到什么、输出什么。
+    </div>
+  </div>
+
+  <!-- 自测 -->
+  <div style="margin-top:16px;background:#fdf7ec;border-radius:8px;padding:14px 16px;border:1px solid #f0dcb4;">
+    <div style="font-weight:700;font-size:17px;margin-bottom:10px;">自测清单：能答上来 = 真懂了（面试就问这些）</div>
+    <div style="font-size:15px;">
+      ▸ 缓存命中时，哪些步骤被跳过？答：RAG、DeepSeek 调用、质量评估，只记录一条 cache 来源的用量<br/>
+      ▸ RAG 检索失败会发生什么？答：优雅降级——返回空上下文继续生成，但记日志，不打断用户<br/>
+      ▸ 为什么要有 JSON 清洗 + Pydantic？答：模型可能输出 Markdown 围栏或顶层数组，不洗会解析失败<br/>
+      ▸ SQLite 和 MySQL 怎么切换？答：DB_DRIVER 环境变量，database.py 有方言转换层（如 INSERT OR REPLACE）<br/>
+      ▸ 每日额度/限流在哪实现？答：routes/ai.py 调额度，rate_limit.py 滑动窗口，超限返回 429
+    </div>
+  </div>
+</div>
+</html>

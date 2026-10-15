@@ -35,6 +35,12 @@ class _CursorWrap:
     def __init__(self, cur):
         self._cur = cur
 
+    def __iter__(self):
+        # sqlite3 的 cursor 可以直接迭代，业务代码里 for row in conn.execute(...) 是自然写法。
+        # 不补这一层的话，同一行代码在 SQLite 上能跑、在 MySQL 上会抛
+        # TypeError: '_CursorWrap' object is not iterable，属于只在生产驱动上暴露的陷阱。
+        return iter(self._cur)
+
     def fetchone(self):
         return self._cur.fetchone()
 

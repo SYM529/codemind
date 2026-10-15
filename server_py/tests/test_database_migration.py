@@ -232,13 +232,23 @@ def test_mysql_legacy_database_gains_project_columns():
 
         conn = get_conn()
         try:
-            document_columns = {row["Field"] for row in conn.execute("SHOW COLUMNS FROM rag_documents")}
-            chunk_columns = {row["Field"] for row in conn.execute("SHOW COLUMNS FROM rag_chunks")}
+            # 取列/索引时统一走 fetchall()：MySQL 驱动返回的是 _CursorWrap，
+            # 直接对 execute() 结果做迭代只在 SQLite 上可行
+            document_columns = {
+                row["Field"] for row in conn.execute("SHOW COLUMNS FROM rag_documents").fetchall()
+            }
+            chunk_columns = {
+                row["Field"] for row in conn.execute("SHOW COLUMNS FROM rag_chunks").fetchall()
+            }
             assert NEW_DOCUMENT_COLUMNS <= document_columns
             assert NEW_CHUNK_COLUMNS <= chunk_columns
 
-            document_indexes = {row["Key_name"] for row in conn.execute("SHOW INDEX FROM rag_documents")}
-            chunk_indexes = {row["Key_name"] for row in conn.execute("SHOW INDEX FROM rag_chunks")}
+            document_indexes = {
+                row["Key_name"] for row in conn.execute("SHOW INDEX FROM rag_documents").fetchall()
+            }
+            chunk_indexes = {
+                row["Key_name"] for row in conn.execute("SHOW INDEX FROM rag_chunks").fetchall()
+            }
             assert "idx_rag_documents_project" in document_indexes
             assert "idx_rag_chunks_project" in chunk_indexes
 

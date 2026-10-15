@@ -38,6 +38,14 @@ _CJK_STOP_CHARS = frozenset(
 SOURCE_KIND_WEIGHTS = {"code": 1.15, "doc": 0.95, "test": 0.5}
 
 
+class EmbeddingDimensionError(RuntimeError):
+    """索引里的向量维度与当前 Embedding 配置不一致。
+
+    典型场景是换了 Embedding 模型（例如从本地哈希向量切到 bge-m3）但没重建索引。
+    这属于配置问题而不是检索失败，必须让调用方能够区分出来并给出可执行的提示。
+    """
+
+
 def _content_tokens(text: str) -> set:
     """用于词面覆盖率的内容词集合（已去掉中文单字虚词）。"""
     return {token for token in _tokenize(text) if token not in _CJK_STOP_CHARS}
@@ -513,7 +521,7 @@ def search(
     matrix = np.asarray([json.loads(r["embedding_json"]) for r in rows], dtype=np.float32)
     query_vec = embed_query(query)
     if matrix.shape[1] != query_vec.shape[0]:
-        raise RuntimeError(
+        raise EmbeddingDimensionError(
             f"知识库向量维度 {matrix.shape[1]} 与当前 Embedding 维度 {query_vec.shape[0]} 不一致，"
             "请删除旧知识库文档后重新索引"
         )
@@ -566,6 +574,7 @@ def build_context(
     project_id: Optional[int] = None,
     max_chars: int = 0,
     require_overlap: bool = False,
+    raise_on_error: bool = False,
 ):
     """返回注入 Prompt 的 ``(context_text, metadata)``。
 
@@ -574,10 +583,16 @@ def build_context(
 
     ``require_overlap`` 为 True 时，只保留与问题存在词面交叠的片段：问答场景用它
     挡住"问题与项目内容完全无关"的情况，避免把无关代码喂给模型后让它凭空编造。
+
+    ``raise_on_error`` 为 True 时把检索异常抛给调用方，而不是吞掉后返回空上下文。
+    项目问答用它把"索引维度与当前 Embedding 不一致"这类配置问题显式暴露出来——
+    否则用户只会看到一句"无法确定"，把配置错误误判成检索效果差。
     """
     try:
         hits = search(user_id, query, top_k, project_id=project_id)
     except Exception:
+        if raise_on_error:
+            raise
         # 生成主流程不能被 RAG 故障打断，但必须留下可排查的日志，
         # 避免知识库静默失效（如 Embedding 维度不一致）。
         logger.exception("RAG 检索失败，本次生成不注入知识库上下文")

@@ -243,6 +243,9 @@ async def _run_project_qa(project_row, user_id: int, question: str, top_k: int, 
         project_id=project_row["id"],
         max_chars=PROJECT_QA_MAX_CONTEXT_CHARS,
         require_overlap=True,
+        # 维度不一致是配置问题（换了 Embedding 但没重建索引），要显式报错而不是
+        # 退化成"检索不到内容"，否则用户会以为只是检索效果差
+        raise_on_error=True,
     )
 
     if not context_text:
@@ -340,6 +343,12 @@ async def ask_project(project_id: str, body: AskReq, request: Request, user=Depe
             try:
                 result = await _run_project_qa(project_row, user["id"], question, top_k, on_token)
                 await queue.put(("complete", result))
+            except rag_service.EmbeddingDimensionError as exc:
+                logger.warning("项目问答维度不一致 public_id=%s: %s", project_id, exc)
+                await queue.put(("error", {
+                    "code": "EMBEDDING_DIM_MISMATCH",
+                    "message": "项目索引与当前 Embedding 模型不一致，请删除该项目后重新上传",
+                }))
             except RuntimeError as exc:
                 if "DEEPSEEK_API_KEY" in str(exc):
                     await queue.put(("error", {"code": "AI_NOT_CONFIGURED", "message": str(exc)}))

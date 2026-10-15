@@ -200,6 +200,10 @@ _MYSQL_SCHEMA = [
         language VARCHAR(32) NOT NULL DEFAULT 'text',
         char_count INTEGER NOT NULL DEFAULT 0,
         chunk_count INTEGER NOT NULL DEFAULT 0,
+        project_id BIGINT NULL,
+        rel_path VARCHAR(512) NULL,
+        line_count INTEGER NOT NULL DEFAULT 0,
+        structure_json LONGTEXT NULL,
         created_at VARCHAR(40) NOT NULL,
         INDEX idx_rag_documents_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -212,6 +216,12 @@ _MYSQL_SCHEMA = [
         chunk_index INTEGER NOT NULL,
         content MEDIUMTEXT NOT NULL,
         embedding_json LONGTEXT NOT NULL,
+        project_id BIGINT NULL,
+        rel_path VARCHAR(512) NULL,
+        language VARCHAR(32) NOT NULL DEFAULT '',
+        symbol_name VARCHAR(128) NULL,
+        start_line INTEGER NOT NULL DEFAULT 0,
+        end_line INTEGER NOT NULL DEFAULT 0,
         created_at VARCHAR(40) NOT NULL,
         INDEX idx_rag_chunks_user (user_id),
         INDEX idx_rag_chunks_document (document_id)
@@ -229,12 +239,80 @@ _MYSQL_SCHEMA = [
         INDEX idx_ai_cache_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
+    """
+    CREATE TABLE IF NOT EXISTS projects (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        public_id VARCHAR(32) NOT NULL UNIQUE,
+        user_id BIGINT NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        archive_name VARCHAR(255) NOT NULL DEFAULT '',
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        file_count INTEGER NOT NULL DEFAULT 0,
+        indexed_file_count INTEGER NOT NULL DEFAULT 0,
+        chunk_count INTEGER NOT NULL DEFAULT 0,
+        total_bytes BIGINT NOT NULL DEFAULT 0,
+        detail_json LONGTEXT NULL,
+        error_message VARCHAR(512) NOT NULL DEFAULT '',
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        INDEX idx_projects_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
 ]
 
 _MYSQL_TABLES = [
     "generations", "usage_records", "feedback", "evaluations",
-    "users", "rag_documents", "rag_chunks", "ai_cache",
+    "users", "rag_documents", "rag_chunks", "ai_cache", "projects",
 ]
+
+# 增量列迁移：MySQL 的 CREATE TABLE IF NOT EXISTS 不会给已存在的表补列，
+# 因此必须显式 ALTER，否则线上库（表已存在）永远拿不到新列。
+# 每条语句都允许失败（列已存在时报错），迁移是幂等的。
+_MYSQL_MIGRATIONS = [
+    "ALTER TABLE rag_documents ADD COLUMN project_id BIGINT NULL",
+    "ALTER TABLE rag_documents ADD COLUMN rel_path VARCHAR(512) NULL",
+    "ALTER TABLE rag_documents ADD COLUMN line_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rag_documents ADD COLUMN structure_json LONGTEXT NULL",
+    "ALTER TABLE rag_chunks ADD COLUMN project_id BIGINT NULL",
+    "ALTER TABLE rag_chunks ADD COLUMN rel_path VARCHAR(512) NULL",
+    "ALTER TABLE rag_chunks ADD COLUMN language VARCHAR(32) NOT NULL DEFAULT ''",
+    "ALTER TABLE rag_chunks ADD COLUMN symbol_name VARCHAR(128) NULL",
+    "ALTER TABLE rag_chunks ADD COLUMN start_line INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rag_chunks ADD COLUMN end_line INTEGER NOT NULL DEFAULT 0",
+    "CREATE INDEX idx_rag_documents_project ON rag_documents(project_id)",
+    "CREATE INDEX idx_rag_chunks_project ON rag_chunks(project_id)",
+]
+
+# SQLite 侧同样的迁移（MySQL 不支持 ADD COLUMN IF NOT EXISTS，SQLite 侧统一走 try/except）
+_SQLITE_MIGRATIONS = [
+    "ALTER TABLE rag_documents ADD COLUMN project_id INTEGER",
+    "ALTER TABLE rag_documents ADD COLUMN rel_path TEXT",
+    "ALTER TABLE rag_documents ADD COLUMN line_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rag_documents ADD COLUMN structure_json TEXT",
+    "ALTER TABLE rag_chunks ADD COLUMN project_id INTEGER",
+    "ALTER TABLE rag_chunks ADD COLUMN rel_path TEXT",
+    "ALTER TABLE rag_chunks ADD COLUMN language TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE rag_chunks ADD COLUMN symbol_name TEXT",
+    "ALTER TABLE rag_chunks ADD COLUMN start_line INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rag_chunks ADD COLUMN end_line INTEGER NOT NULL DEFAULT 0",
+    "CREATE INDEX IF NOT EXISTS idx_rag_documents_project ON rag_documents(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rag_chunks_project ON rag_chunks(project_id)",
+]
+
+
+def _apply_migrations(conn, statements) -> None:
+    """逐条执行迁移，已存在则跳过。
+
+    注意：新列上的索引必须放在 CREATE TABLE 之后单独执行，
+    否则对"旧库"（表已存在、列还没补）执行 CREATE INDEX 会直接失败并中断整个初始化。
+    """
+    for statement in statements:
+        try:
+            conn.execute(statement)
+            conn.commit()
+        except Exception:
+            # 列/索引已存在，或该驱动不支持该语句：迁移本身是幂等的，忽略即可
+            pass
 
 
 def _mysql_admin_conn():
@@ -262,6 +340,7 @@ def _init_mysql():
     for ddl in _MYSQL_SCHEMA:
         conn.execute(ddl)
     conn.commit()
+    _apply_migrations(conn, _MYSQL_MIGRATIONS)
     conn.close()
 
 
@@ -342,6 +421,10 @@ def init_db():
             language TEXT NOT NULL DEFAULT 'text',
             char_count INTEGER NOT NULL DEFAULT 0,
             chunk_count INTEGER NOT NULL DEFAULT 0,
+            project_id INTEGER,
+            rel_path TEXT,
+            line_count INTEGER NOT NULL DEFAULT 0,
+            structure_json TEXT,
             created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS rag_chunks (
@@ -351,6 +434,12 @@ def init_db():
             chunk_index INTEGER NOT NULL,
             content TEXT NOT NULL,
             embedding_json TEXT NOT NULL,
+            project_id INTEGER,
+            rel_path TEXT,
+            language TEXT NOT NULL DEFAULT '',
+            symbol_name TEXT,
+            start_line INTEGER NOT NULL DEFAULT 0,
+            end_line INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_rag_chunks_user ON rag_chunks(user_id);
@@ -365,6 +454,23 @@ def init_db():
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_ai_cache_user ON ai_cache(user_id);
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_id TEXT NOT NULL UNIQUE,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            archive_name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            file_count INTEGER NOT NULL DEFAULT 0,
+            indexed_file_count INTEGER NOT NULL DEFAULT 0,
+            chunk_count INTEGER NOT NULL DEFAULT 0,
+            total_bytes INTEGER NOT NULL DEFAULT 0,
+            detail_json TEXT,
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
     """)
 
     for col in ["ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"] + [
@@ -378,6 +484,7 @@ def init_db():
             conn.execute(col)
         except Exception:
             pass
+    _apply_migrations(conn, _SQLITE_MIGRATIONS)
     conn.commit()
     conn.close()
 

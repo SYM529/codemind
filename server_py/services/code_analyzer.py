@@ -2,7 +2,104 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+
+# JS/TS 类声明；用于类体方法识别，比原有行首正则多容忍 default 导出
+_JS_CLASS_DECL_RE = re.compile(r"^(?:export\s+)?(?:default\s+)?class\s+(\w+)")
+# 类体中的成员方法：static/async/get/set/私有字段均可
+_JS_METHOD_RE = re.compile(
+    r"^(?:export\s+)?(?:default\s+)?(?:static\s+)?(?:async\s+)?(?:get\s+|set\s+)?(#?[A-Za-z_$][\w$]*)\s*\("
+)
+# 这些关键字后面的括号不是方法声明
+_JS_CONTROL_WORDS = frozenset({
+    "if", "for", "while", "switch", "catch", "return", "do", "else", "with",
+    "function", "typeof", "new", "delete", "await", "case", "throw", "super", "this", "in", "of",
+})
+
+
+def _js_param_names(text: str) -> List[str]:
+    """从形如 ``foo(a, b = 1, c: string)`` 的片段中提取参数名。"""
+    match = re.search(r"\(([^)]*)\)", text)
+    if not match:
+        return []
+    return [
+        part.strip().split(":")[0].split("=")[0]
+        for part in match.group(1).split(",")
+        if part.strip()
+    ]
+
+
+def _count_braces(line: str) -> int:
+    """粗略统计一行中大括号的净增减。
+
+    跳过行注释、单引号/双引号/模板字符串内容，避免 ``const s = "}";`` 这类
+    字面量把深度算错（正则解析器不需要也不应该做到完全精确）。
+    """
+    depth = 0
+    index = 0
+    quote: Optional[str] = None
+    while index < len(line):
+        char = line[index]
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in "\"'`":
+            quote = char
+        elif char == "/" and index + 1 < len(line) and line[index + 1] == "/":
+            break
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    return depth
+
+
+def _js_class_methods(lines: List[str]) -> List[Dict[str, Any]]:
+    """识别类体内的成员方法。
+
+    只有"行起始深度恰好等于类体深度"的行才会被判定为方法，
+    因此方法体内部的 if/for 等控制语句不会因为缩进被误判成方法。
+    单行写完整个类（``class A { foo() {} }``）等极端写法识别不到，
+    这类文件在项目索引里会退化为按行窗口切片。
+    """
+    methods: List[Dict[str, Any]] = []
+    depth = 0
+    class_body_depths: List[int] = []
+    pending_class_depth: Optional[int] = None
+
+    for number, raw in enumerate(lines, 1):
+        stripped = raw.strip()
+        start_depth = depth
+
+        if class_body_depths and start_depth == class_body_depths[-1]:
+            match = _JS_METHOD_RE.match(stripped)
+            if match and match.group(1) not in _JS_CONTROL_WORDS:
+                methods.append({
+                    "name": match.group(1),
+                    "line": number,
+                    "parameters": _js_param_names(stripped),
+                })
+
+        delta = _count_braces(raw)
+        depth += delta
+        if _JS_CLASS_DECL_RE.match(stripped):
+            if delta > 0:
+                class_body_depths.append(start_depth + 1)
+            else:
+                # ``class A`` 换行后才写 ``{``：等深度真正增加时再登记类体深度
+                pending_class_depth = start_depth
+        elif pending_class_depth is not None and depth > pending_class_depth:
+            class_body_depths.append(depth)
+            pending_class_depth = None
+
+        while class_body_depths and depth < class_body_depths[-1]:
+            class_body_depths.pop()
+
+    return methods
 
 
 def _js_analyze(code: str) -> Dict[str, Any]:
@@ -21,7 +118,6 @@ def _js_analyze(code: str) -> Dict[str, Any]:
         r"|^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:\([^)]*\)\s*=>|\w+\s*=>)"
         r"|^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*function"
     )
-    class_re = re.compile(r"^(?:export\s+)?class\s+(\w+)")
     import_re = re.compile(r"^import\s+|^const\s+\w+\s*=\s*require")
     var_re = re.compile(r"^(?:export\s+)?(?:const|let|var)\s+(\w+)")
 
@@ -30,11 +126,9 @@ def _js_analyze(code: str) -> Dict[str, Any]:
         m = func_re.match(stripped)
         if m:
             name = m.group(1) or m.group(2) or m.group(3) or "anonymous"
-            pm = re.search(r"\(([^)]*)\)", stripped)
-            params = [p.strip().split(":")[0].split("=")[0] for p in pm.group(1).split(",") if p.strip()] if pm else []
-            structure["functions"].append({"name": name, "line": i, "parameters": params})
+            structure["functions"].append({"name": name, "line": i, "parameters": _js_param_names(stripped)})
             continue
-        m = class_re.match(stripped)
+        m = _JS_CLASS_DECL_RE.match(stripped)
         if m:
             structure["classes"].append({"name": m.group(1), "line": i})
             continue
@@ -44,6 +138,9 @@ def _js_analyze(code: str) -> Dict[str, Any]:
         m = var_re.match(stripped)
         if m:
             structure["variables"].append({"name": m.group(1), "line": i})
+
+    # 类体内的成员方法：行首正则覆盖不到，单独按大括号深度补一轮
+    structure["functions"].extend(_js_class_methods(lines))
 
     seen_f = set()
     deduped_f = []
@@ -66,6 +163,20 @@ def _js_analyze(code: str) -> Dict[str, Any]:
     return structure
 
 
+def _py_symbol(node) -> Dict[str, Any]:
+    """Python 函数节点 → 结构条目。
+
+    额外带上 ``endLine``：AST 能给出精确结束行，项目级切片据此按函数边界切割，
+    不依赖"下一个符号起始行减一"的估算。
+    """
+    return {
+        "name": node.name,
+        "line": node.lineno,
+        "endLine": getattr(node, "end_lineno", None),
+        "parameters": [arg.arg for arg in node.args.args],
+    }
+
+
 def _py_analyze(code: str) -> Dict[str, Any]:
     structure: Dict[str, Any] = {
         "functions": [],
@@ -79,10 +190,18 @@ def _py_analyze(code: str) -> Dict[str, Any]:
 
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            params = [a.arg for a in node.args.args]
-            structure["functions"].append({"name": node.name, "line": node.lineno, "parameters": params})
+            structure["functions"].append(_py_symbol(node))
         elif isinstance(node, ast.ClassDef):
-            structure["classes"].append({"name": node.name, "line": node.lineno})
+            structure["classes"].append({
+                "name": node.name,
+                "line": node.lineno,
+                "endLine": getattr(node, "end_lineno", None),
+            })
+            # 类方法：历史实现只收集"函数体内嵌套的函数"，类体中的方法整体缺失，
+            # 项目级切片会因此把整个类当作一段文本，这里补齐
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
+                    structure["functions"].append(_py_symbol(item))
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
@@ -97,8 +216,7 @@ def _py_analyze(code: str) -> Dict[str, Any]:
                 if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef) and item not in [
                     n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.lineno <= node.lineno
                 ]:
-                    params = [a.arg for a in item.args.args]
-                    structure["functions"].append({"name": item.name, "line": item.lineno, "parameters": params})
+                    structure["functions"].append(_py_symbol(item))
 
     seen = set()
     deduped = []

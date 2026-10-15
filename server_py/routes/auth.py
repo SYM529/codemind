@@ -9,6 +9,7 @@ from config import ADMIN_BOOTSTRAP_USERNAME, ALLOW_PUBLIC_REGISTRATION
 from database import get_conn
 from models import ChangePasswordReq, LoginReq, RegisterReq
 from rate_limit import SlidingWindowLimiter
+from services import project_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -124,14 +125,24 @@ async def change_password(body: ChangePasswordReq, user=Depends(get_current_user
 async def delete_account(user=Depends(get_current_user)):
     conn = get_conn()
     uid = user["id"]
-    conn.execute("DELETE FROM feedback WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM evaluations WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM usage_records WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM generations WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM rag_chunks WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM rag_documents WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM ai_cache WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM users WHERE id=?", (uid,))
-    conn.commit()
-    conn.close()
+    try:
+        # 先取出项目标识：上传工作目录以 public_id 命名，删记录后仍要清理磁盘
+        public_ids = [
+            row["public_id"]
+            for row in conn.execute("SELECT public_id FROM projects WHERE user_id=?", (uid,)).fetchall()
+        ]
+        conn.execute("DELETE FROM feedback WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM evaluations WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM usage_records WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM generations WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM rag_chunks WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM rag_documents WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM ai_cache WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM projects WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM users WHERE id=?", (uid,))
+        conn.commit()
+    finally:
+        conn.close()
+    for public_id in public_ids:
+        project_service.discard_upload_dir(project_service.upload_dir_for(public_id))
     return {"success": True, "message": "账户及相关数据已删除"}

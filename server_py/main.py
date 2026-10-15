@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,8 +20,12 @@ from routes.auth import router as auth_router
 from routes.ai import router as ai_router
 from routes.admin import router as admin_router
 from routes.rag import router as rag_router
+from routes.projects import router as projects_router
 from services.code_analyzer import analyze_code
 from services.nlp_comment_generator import build_comments
+from services import project_service
+
+logger = logging.getLogger(__name__)
 
 
 class AnalyzeReq(BaseModel):
@@ -30,6 +35,12 @@ class AnalyzeReq(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 清理上次异常退出残留的项目上传工作目录（例如容器被强杀）。
+    # 清理失败不影响服务启动。
+    try:
+        project_service.cleanup_stale_upload_dirs()
+    except Exception:
+        logger.exception("清理陈旧项目上传目录失败")
     yield
 
 
@@ -51,6 +62,7 @@ app.include_router(auth_router)
 app.include_router(ai_router)
 app.include_router(admin_router)
 app.include_router(rag_router)
+app.include_router(projects_router)
 
 
 @app.get("/api/health")

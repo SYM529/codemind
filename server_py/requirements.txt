@@ -1,5 +1,8 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.3
+# FastAPI 解析 multipart/form-data（ZIP 项目上传）所必需。
+# 本地开发环境此前已有该包但未登记，缺失时上传接口会直接报错
+python-multipart==0.0.32
 python-dotenv==1.1.0
 pyjwt==2.10.1
 bcrypt==4.3.0

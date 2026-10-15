@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import hash_password, require_admin
 from database import get_conn
 from models import AdminCreateUserReq, AdminUpdateUserReq
+from services import project_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -15,8 +16,15 @@ _USER_COLUMNS = (
 )
 
 
-def _delete_user_data(conn, uid: int):
-    """删除用户及其全部关联数据，范围与个人注销接口保持一致。"""
+def _delete_user_data(conn, uid: int) -> list:
+    """删除用户及其全部关联数据，范围与个人注销接口保持一致。
+
+    返回该用户的项目标识，供调用方在事务提交后清理上传工作目录。
+    """
+    public_ids = [
+        row["public_id"]
+        for row in conn.execute("SELECT public_id FROM projects WHERE user_id=?", (uid,)).fetchall()
+    ]
     conn.execute("DELETE FROM feedback WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM evaluations WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM usage_records WHERE user_id=?", (uid,))
@@ -24,7 +32,9 @@ def _delete_user_data(conn, uid: int):
     conn.execute("DELETE FROM rag_chunks WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM rag_documents WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM ai_cache WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM projects WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    return public_ids
 
 
 @router.get("/metrics")
@@ -76,6 +86,7 @@ async def metrics(user=Depends(require_admin)):
                 "validLineRate": round(ev["validLineRate"], 4),
                 "durationMs": round(ev["durationMs"]),
             },
+            "projects": project_service.project_counts_for_admin(),
             "daily": [dict(r) for r in daily],
         },
     }
@@ -182,7 +193,9 @@ async def delete_user(user_id: int, user=Depends(require_admin)):
         conn.close()
         raise HTTPException(400, detail={"success": False, "error": {"code": "LAST_ADMIN_REQUIRED", "message": "至少需要保留一个管理员账号"}})
 
-    _delete_user_data(conn, user_id)
+    public_ids = _delete_user_data(conn, user_id)
     conn.commit()
     conn.close()
+    for public_id in public_ids:
+        project_service.discard_upload_dir(project_service.upload_dir_for(public_id))
     return {"success": True, "message": "用户及其相关数据已删除"}

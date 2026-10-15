@@ -4,7 +4,7 @@
 
 CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结合 Python AST、LangChain、RAG 检索增强、结构化输出校验和可观测性，支持代码注释、代码解释、重构建议、历史管理和多用户数据隔离。
 
-后端驱动完整生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 结构化校验；前端提供代码工作台、RAG 知识库、项目理解与多用户数据隔离；`tests/` 提供 108 项 SQLite/MySQL 双驱动测试，GitHub Actions 自动执行。
+后端驱动完整生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 结构化校验；前端提供代码工作台、RAG 知识库、项目理解与多用户数据隔离；`tests/` 提供 121 项 SQLite/MySQL 双驱动测试，GitHub Actions 自动执行。
 
 开发周期：2026-08 至 2026-10 持续开发，2026-10 统一推送至 GitHub。
 
@@ -196,7 +196,7 @@ flowchart LR
 
 **评测定位**：CodeMind 的质量评测是**在线、逐次、持续**的——每次生成自动计算函数覆盖率与行号有效率并落库，随真实使用持续累积，展示的是真实运行数据，而非离线批量构建的评测集。它回答的是「上线后每次生成质量如何」；离线批量评测（人工构建评测集做 CI 回归门禁）回答的是「上线前整体能力如何」。两者是互补的两种评测形态，而非同一维度的替代。
 
-**108 项 pytest 测试**（本地 `python -m pytest -q` 运行，共收集 109 项，其中 1 项 MySQL 专用用例在 SQLite 轮次自动跳过），覆盖：未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度一致性防护、未配置 Key 时 503 降级，以及 ZIP 安全边界（路径穿越／压缩炸弹／符号链接／体积上限）、项目检索隔离、旧库增量迁移与问答引用链路。CI 同时在 SQLite 与 MySQL 双驱动上执行（GitHub Actions，状态见页首徽章）。
+**121 项 pytest 测试**（本地 `python -m pytest -q` 运行，共收集 122 项，其中 1 项 MySQL 专用用例在 SQLite 轮次自动跳过），覆盖：未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度一致性防护、未配置 Key 时 503 降级，以及 ZIP 安全边界（路径穿越／压缩炸弹／符号链接／体积上限）、项目检索隔离、旧库增量迁移、问答引用链路与检索排序来源先验。CI 同时在 SQLite 与 MySQL 双驱动上执行（GitHub Actions，状态见页首徽章）。
 
 测试分布：
 
@@ -205,7 +205,8 @@ flowchart LR
 | `test_archive_service.py` | 32 | ZIP 安全边界：路径穿越、压缩炸弹、符号链接、敏感文件、四类体积上限 |
 | `test_projects_api.py` | 14 | 项目上传/清单/删除、跨用户隔离、越权 404、级联、限流与超限 |
 | `test_code_chunker.py` | 8 | 符号边界切片、嵌套符号递归、行号区间不重叠、长度上限与兜底 |
-| `test_project_qa.py` | 8 | 证据不足不调模型、引用回传真实来源、跨项目上下文隔离、流式事件 |
+| `test_retrieval_ranking.py` | 8 | 检索排序：来源加权（实现代码优先于文档与测试）、中文虚词不计入词面覆盖率、维度不一致可显式上报 |
+| `test_project_qa.py` | 9 | 证据不足不调模型、引用回传真实来源、跨项目上下文隔离、流式事件、维度不一致的提示 |
 | `test_database_migration.py` | 5 | 旧库补列补索引、迁移幂等性、迁移与建表 DDL 一致性（含 1 项 MySQL 专用用例） |
 | `test_ai_comment_service.py` | 7 | LLM 生成编排、JSON 清洗与围栏容错 |
 | `test_api.py` | 6 | API 集成：鉴权链、额度、503 降级 |
@@ -214,6 +215,7 @@ flowchart LR
 | `test_rag.py` | 4 | 分块、索引、混合检索与维度防护 |
 | `test_code_analyzer.py` | 4 | Python AST / JS / Java 结构解析 |
 | `test_cache.py` | 4 | 语义缓存命中、失效与维度不一致清空 |
+| `test_embedding_service.py` | 4 | 远程 Embedding 返回处理：按 index 排序、条数不符报错、写库前归一化 |
 | `test_style_guides.py` | 3 | 团队规范样例入库与召回 |
 | `test_evaluation.py` | 2 | 覆盖率与行号有效率计算 |
 | `test_auth.py` | 2 | JWT 签发/校验、密码哈希 |

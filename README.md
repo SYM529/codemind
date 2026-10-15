@@ -4,7 +4,7 @@
 
 CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结合 Python AST、LangChain、RAG 检索增强、结构化输出校验和可观测性，支持代码注释、代码解释、重构建议、历史管理和多用户数据隔离。
 
-后端驱动完整生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 结构化校验；前端提供代码工作台、RAG 知识库与多用户数据隔离；`tests/` 提供 42 项 SQLite/MySQL 双驱动测试，GitHub Actions 自动执行。
+后端驱动完整生成流水线：代码结构分析 → 语义缓存 → BM25+向量混合检索 → Prompt 组装 → SSE 逐 token 流式生成 → JSON 清洗与 Pydantic 结构化校验；前端提供代码工作台、RAG 知识库、项目理解与多用户数据隔离；`tests/` 提供 108 项 SQLite/MySQL 双驱动测试，GitHub Actions 自动执行。
 
 开发周期：2026-08 至 2026-10 持续开发，2026-10 统一推送至 GitHub。
 
@@ -30,7 +30,7 @@ CodeMind 是一个基于 DeepSeek 的 AI 代码理解与文档生成助手，结
 
 这是一个面向 AI 应用开发的全栈项目，重点展示 LLM 调用编排、RAG 检索增强、流式响应、结构化结果校验、质量评估、成本控制、JWT 鉴权和 MySQL/SQLite 双驱动持久化等工程能力。
 
-开发周期：2026-08 至 2026-09 持续开发，2026-10 统一整理后推送至 GitHub。
+开发周期：2026-08 至 2026-10 持续开发，2026-10 统一整理后推送至 GitHub。
 
 ## 快速体验（3 分钟）
 
@@ -105,10 +105,15 @@ codemind/
 │   │   ├── auth.py                # 注册/登录/改密/注销
 │   │   ├── ai.py                  # AI 生成/SSE/额度/历史/反馈/缓存
 │   │   ├── rag.py                 # 知识库 CRUD/检索
-│   │   └── admin.py               # 管理员看板
+│   │   ├── admin.py               # 管理员看板
+│   │   └── projects.py            # 项目上传/解析进度/文件清单/项目问答
 │   ├── services/                  # 业务服务层
 │   │   ├── ai_comment_service.py  # LangChain + DeepSeek 调用
-│   │   ├── code_analyzer.py       # Python AST / JS 结构分析
+│   │   ├── code_analyzer.py       # Python AST / JS / Java 结构分析
+│   │   ├── code_chunker.py        # 按符号边界切片，超长退化为行/字符窗口
+│   │   ├── archive_service.py     # ZIP 安全解包与文件筛选
+│   │   ├── project_service.py     # 项目生命周期、后台索引编排、工作目录清理
+│   │   ├── ai_qa_service.py       # 项目级问答的 Prompt 与流式生成
 │   │   ├── nlp_comment_generator.py # 规则版注释生成
 │   │   ├── embedding_service.py   # 向量化
 │   │   ├── rag_service.py         # 分块/索引/混合检索/重排
@@ -117,7 +122,7 @@ codemind/
 │   │   ├── feedback_service.py    # 反馈
 │   │   ├── usage_service.py       # 用量与成本
 │   │   └── generation_history_service.py
-│   ├── tests/                     # pytest 单元测试与 API 集成测试（鉴权/RBAC/隔离/级联/维度防护）
+│   ├── tests/                     # pytest 单测与 API 集成测试（鉴权/RBAC/隔离/级联/ZIP 安全/迁移/问答）
 │   ├── conftest.py                # 测试配置（SQLite 临时库 / MySQL 测试库）
 │   ├── requirements.txt / requirements-dev.txt
 │   ├── .env.example               # 环境变量模板
@@ -128,7 +133,7 @@ codemind/
 │   │   ├── router/                # 路由配置（懒加载）
 │   │   ├── store/                 # 状态管理
 │   │   ├── components/            # 可复用组件（AuthShell、DebugPanel 等）
-│   │   ├── views/                 # 页面组件（Home/Knowledge/History/Admin 等）
+│   │   ├── views/                 # 页面组件（Home/Knowledge/Project/History/Admin 等）
 │   │   ├── App.vue
 │   │   └── main.js
 │   ├── nginx.conf                 # 生产 Nginx（gzip / 缓存 / API 反代）
@@ -176,13 +181,14 @@ flowchart LR
 ## 项目亮点与技术难点
 
 1. **RAG 混合检索**：文档分块向量化存入数据库，检索时融合 BM25 与向量相似度并做词面重排；默认零依赖本地哈希 n-gram Embedding，可通过环境变量切换为 OpenAI 兼容 Embedding API；入库与检索均校验向量维度一致性，切换 Embedding 模式导致维度不一致时显式报错提示重建索引，避免知识库静默失效。
-2. **语义缓存**：对请求签名做向量相似度匹配，命中则复用历史结果并跳过模型调用，缓存键包含知识库版本，避免上下文变化导致结果过期。
-3. **真实 Token 计量**：开启 `stream_usage`，从模型响应读取真实 `usage`，流式与非流式均记录真实输入/输出 Token 与成本（不可用时回退估算并标注来源 `api`/`estimated`/`cache`），用量接口按来源聚合，估算/真实口径不硬编码。
-4. **DeepSeek 兼容性处理**：采用"流式文本接收 + JSON 清洗 + Pydantic 校验"，并容忍模型返回顶层数组或 Markdown 围栏。
-5. **AI 结果可评估**：计算函数覆盖率和行号有效率，保存每次生成的质量评估结果。
-6. **成本与安全**：按用户记录 Token 和成本，IP 限流、登录/注册限流、代码长度限制、每日调用额度和 CORS 白名单。
-7. **数据安全隔离**：生成历史、反馈、使用量、评估、缓存和知识库数据都通过 `user_id` 隔离，注销账户时级联删除。
-8. **工程化**：pytest 单元测试与 API 集成测试（未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度防护、未配置 Key 时 503 降级），CI 同时覆盖 SQLite 与 MySQL 双驱动；GitHub Actions（后端双驱动测试 + 前端 lint/构建）、Docker Compose 三容器编排（Nginx + FastAPI + MySQL 8，数据库仅内网可达）。
+2. **项目级代码理解**：上传项目 ZIP 后安全解包并建立项目知识库——拒绝路径穿越与符号链接、过滤依赖目录与密钥文件、四重体积上限且在写入过程中按实际字节复核；按符号边界切片（Python 取 AST 起止行，其余语言按大括号深度识别类方法），Chunk 带来源文件、符号名与行号区间；检索按 `project_id` 隔离，项目问答只引用真实命中的片段，检索不到依据时明确拒答而不是编造项目结构。
+3. **语义缓存**：对请求签名做向量相似度匹配，命中则复用历史结果并跳过模型调用，缓存键包含知识库版本，避免上下文变化导致结果过期。
+4. **真实 Token 计量**：开启 `stream_usage`，从模型响应读取真实 `usage`，流式与非流式均记录真实输入/输出 Token 与成本（不可用时回退估算并标注来源 `api`/`estimated`/`cache`），用量接口按来源聚合，估算/真实口径不硬编码。
+5. **DeepSeek 兼容性处理**：采用"流式文本接收 + JSON 清洗 + Pydantic 校验"，并容忍模型返回顶层数组或 Markdown 围栏。
+6. **AI 结果可评估**：计算函数覆盖率和行号有效率，保存每次生成的质量评估结果。
+7. **成本与安全**：按用户记录 Token 和成本，IP 限流、登录/注册限流、代码长度限制、每日调用额度和 CORS 白名单。
+8. **数据安全隔离**：生成历史、反馈、使用量、评估、缓存和知识库数据都通过 `user_id` 隔离，注销账户时级联删除。
+9. **工程化**：pytest 单元测试与 API 集成测试（未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度防护、未配置 Key 时 503 降级），CI 同时覆盖 SQLite 与 MySQL 双驱动；GitHub Actions（后端双驱动测试 + 前端 lint/构建）、Docker Compose 三容器编排（Nginx + FastAPI + MySQL 8，数据库仅内网可达）。
 
 > 📋 开发与部署过程中的真实问题复盘（MySQL 方言适配 Bug、SSE 异常吞噬、配置验证方法等 7 个案例）见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
 
@@ -190,12 +196,17 @@ flowchart LR
 
 **评测定位**：CodeMind 的质量评测是**在线、逐次、持续**的——每次生成自动计算函数覆盖率与行号有效率并落库，随真实使用持续累积，展示的是真实运行数据，而非离线批量构建的评测集。它回答的是「上线后每次生成质量如何」；离线批量评测（人工构建评测集做 CI 回归门禁）回答的是「上线前整体能力如何」。两者是互补的两种评测形态，而非同一维度的替代。
 
-**42 项 pytest 测试**（本地 `python -m pytest -q`，CI 自动运行），覆盖：未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度一致性防护、未配置 Key 时 503 降级。CI 同时在 SQLite 与 MySQL 双驱动上执行（GitHub Actions，状态见页首徽章）。
+**108 项 pytest 测试**（本地 `python -m pytest -q` 运行，共收集 109 项，其中 1 项 MySQL 专用用例在 SQLite 轮次自动跳过），覆盖：未鉴权 401、越权 403、跨用户数据隔离、注销级联删除、Embedding 维度一致性防护、未配置 Key 时 503 降级，以及 ZIP 安全边界（路径穿越／压缩炸弹／符号链接／体积上限）、项目检索隔离、旧库增量迁移与问答引用链路。CI 同时在 SQLite 与 MySQL 双驱动上执行（GitHub Actions，状态见页首徽章）。
 
 测试分布：
 
 | 测试文件 | 用例数 | 覆盖重点 |
 | --- | --- | --- |
+| `test_archive_service.py` | 32 | ZIP 安全边界：路径穿越、压缩炸弹、符号链接、敏感文件、四类体积上限 |
+| `test_projects_api.py` | 14 | 项目上传/清单/删除、跨用户隔离、越权 404、级联、限流与超限 |
+| `test_code_chunker.py` | 8 | 符号边界切片、嵌套符号递归、行号区间不重叠、长度上限与兜底 |
+| `test_project_qa.py` | 8 | 证据不足不调模型、引用回传真实来源、跨项目上下文隔离、流式事件 |
+| `test_database_migration.py` | 5 | 旧库补列补索引、迁移幂等性、迁移与建表 DDL 一致性（含 1 项 MySQL 专用用例） |
 | `test_ai_comment_service.py` | 7 | LLM 生成编排、JSON 清洗与围栏容错 |
 | `test_api.py` | 6 | API 集成：鉴权链、额度、503 降级 |
 | `test_database_dialect.py` | 5 | SQLite→MySQL 方言转换（`INSERT OR REPLACE` 等） |

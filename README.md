@@ -51,6 +51,7 @@ docker compose up -d --build
 - 向量检索为全量内存精确检索，无 ANN 索引，面向数百到数千 chunk 规模
 - 语义缓存阈值 0.98 偏保守，命中率低但优先保证正确性
 - IP 限流为单机内存态，重启即失效、多实例不共享
+- 项目索引任务为进程内后台线程（无独立队列），进程重启会丢失进行中的任务，多实例不共享任务状态
 
 > 均属小规模（个人/团队）场景下的主动设计取舍，详见下文「已知限制与演进路线」。
 
@@ -58,6 +59,7 @@ docker compose up -d --build
 
 - 🤖 **智能注释生成** - 基于 LLM 与代码结构分析自动生成函数级注释
 - 📚 **RAG 知识库** - 上传规范文档/参考代码，生成时向量检索并注入上下文
+- 📦 **项目级代码理解** - 上传整个项目的 ZIP 压缩包，多文件扫描 + 结构解析，建立与项目隔离的知识库
 - 🔎 **混合检索** - BM25 + 向量召回 + 词面重排，提升知识命中质量
 - ♻️ **语义缓存** - 相似请求命中缓存直接复用结果，跳过模型调用降低成本
 - 🌐 **多语言支持** - JavaScript/TypeScript、Python（AST）、Java（专用正则解析，含构造器/泛型方法/字段）
@@ -299,6 +301,23 @@ npm run serve
 3. 在"检索测试"输入代码或问题，查看混合检索召回片段与相关度
 4. 之后生成注释时，命中的片段会自动注入 Prompt，并在"AI 调试信息 → RAG 检索增强"中展示
 
+### 项目级代码理解（ZIP 上传）
+1. 顶部导航进入"项目理解"，点击"上传项目 ZIP"选择压缩包
+2. 上传后立即返回，解析在后台进行；列表与详情页会轮询显示进度（排队中 → 解析中 → 已就绪/部分完成/解析失败）
+3. 解析完成后可查看文件清单，点"查看"可看到单个文件的结构分析（函数/类/行号区间）与知识片段
+4. 在详情页的"项目内检索验证"输入函数名或问题，确认召回效果
+5. 在"项目问答"输入问题，系统只检索该项目的代码上下文，通过 SSE 逐字返回答案，并给出实际检索到的来源文件、函数与行号区间
+
+**问答约束**：只检索当前 `project_id`，每个结论的来源编号由真实检索元数据映射（模型文本里不直接出现行号，避免伪造位置）；问题与项目代码没有任何词面交叠时直接提示"根据当前项目代码无法确定"而不调用模型；回答优先匹配函数名/类名/英文关键词。
+
+**索引范围**：只处理 `.py / .js / .mjs / .jsx / .ts / .tsx / .java` 源码与 `.md / .txt / .rst` 文档；已在白名单内按扩展名判定语言，**不会**把未知语言交给 JS 正则解析器。`node_modules`、`.git`、`dist`、`build`、`venv`、`__pycache__` 等目录整棵子树跳过；`.env`、私钥、证书、凭证、数据库文件一律不读取。
+
+**切片方式**：优先按符号（类/函数）边界切，Python 用 AST 的真实起止行，其余语言按"下一个符号起始行"补齐区间并按大括号深度识别类方法；单个符号过长时退化为带重叠的行窗口，仍然超长（压缩过的单行文件）时按字符切分，保证单个 Chunk 有长度上界。每个 Chunk 都带 `project_id / rel_path / language / symbol_name / start_line / end_line`。
+
+**隔离方式**：项目文件与手动知识库共用同一套向量存储，靠 `project_id` 区分归属；`project_id IS NULL` 才是手动/团队规范库。两个方向都不串：项目检索只看本项目，知识库检索与单文件生成完全看不到项目片段。
+
+**安全边界**：不调用 `extractall`，逐条目校验文件名（拒绝绝对路径、`..`、盘符、UNC、NTFS 数据流、Windows 保留名）；拒绝符号链接；条目数/单文件/解压总量/压缩比四重上限，且解压过程中按**实际写入字节**再次强制（元数据里的 `file_size` 不可信）；解压只落在随机工作目录内，解析完成立即删除。上传、解析都不占 AI 额度（不调用大模型）。
+
 ### AI 工程能力
 - DeepSeek `deepseek-chat` 模型接入
 - 代码注释、代码解释和重构建议三类任务
@@ -346,6 +365,20 @@ POST   /api/rag/search                  语义检索测试
 GET    /api/rag/stats                   知识库统计
 POST   /api/rag/seed                    载入示例文档
 ```
+
+### 项目级代码理解
+```text
+POST   /api/projects                     上传 ZIP 项目包（multipart/form-data：file + name）
+GET    /api/projects                     项目列表（含上传上限 limits）
+GET    /api/projects/{project_id}        项目详情与解析进度
+GET    /api/projects/{project_id}/files           项目文件清单
+GET    /api/projects/{project_id}/files/{id}      单文件结构与知识片段
+DELETE /api/projects/{project_id}        删除项目及其全部知识片段
+POST   /api/projects/{project_id}/search 项目内检索验证（只在本项目内召回）
+POST   /api/projects/{project_id}/ask    项目级问答（SSE：token/complete/error，只检索本项目）
+```
+
+约束：`project_id` 是随机 32 位十六进制字符串（不暴露自增主键，避免被枚举）；所有接口都要求登录，且每个查询都带 `user_id`，访问他人项目统一返回 404。上传与删除接口另有独立限流。
 
 ### 其他
 ```text
@@ -450,6 +483,12 @@ MYSQL_ROOT_PASSWORD=change_me_strong
 - `DEEPSEEK_BASE_URL`: 可选的 DeepSeek 兼容接口地址
 - `DEEPSEEK_INPUT_COST_PER_MILLION` / `DEEPSEEK_OUTPUT_COST_PER_MILLION`: 成本单价（默认按 deepseek-chat 估算）
 - `EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` / `EMBEDDING_MODEL`: 可选，配置后使用 OpenAI 兼容 Embedding API；不配置则使用本地哈希 n-gram Embedding
+- `PROJECT_MAX_ZIP_BYTES`: 项目 ZIP 上限，默认 20971520（20 MB）。**必须与 nginx `client_max_body_size`（默认 25m）配套调整**
+- `PROJECT_MAX_TOTAL_UNCOMPRESSED_BYTES` / `PROJECT_MAX_SINGLE_FILE_BYTES` / `PROJECT_MAX_FILES` / `PROJECT_MAX_ARCHIVE_ENTRIES` / `PROJECT_MAX_DEPTH` / `PROJECT_MAX_COMPRESSION_RATIO`: 解压总量、单文件、可索引文件数、压缩包条目数、目录层级、压缩比上限
+- `PROJECT_MAX_CHUNKS` / `PROJECT_MAX_CHUNK_LINES` / `PROJECT_MAX_CHUNK_CHARS`: 单项目 Chunk 总数与单个 Chunk 的行数/字符上限
+- `PROJECT_MAX_PER_USER` / `PROJECT_UPLOAD_RATE_LIMIT` / `PROJECT_UPLOAD_RATE_WINDOW_SECONDS` / `PROJECT_INDEX_CONCURRENCY`: 单用户项目数、上传限流与同时进行的索引任务数
+- `PROJECT_UPLOAD_TMP_DIR` / `PROJECT_STALE_UPLOAD_HOURS`: 解压工作目录（默认 `server_py/data/tmp`，容器内位于 `server-data` 卷）与陈旧目录清理阈值
+- `PROJECT_QA_MAX_TOP_K` / `PROJECT_QA_MAX_CONTEXT_CHARS` / `PROJECT_QA_RATE_LIMIT` / `PROJECT_QA_RATE_WINDOW_SECONDS`: 单次问答召回片段数、上下文长度预算与提问限流
 
 ## 开发指南
 

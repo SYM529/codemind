@@ -100,8 +100,9 @@ async def _run_generation(input_data: dict, user_id: int, on_token=None):
     rag_query = "\n".join([language, task, function_names, code[:1500]])
     context_text, retrieved = rag_service.build_context(user_id, rag_query, top_k=4)
 
-    signature = cache_service.build_signature(code, language, style, task, cache_service._kb_version(user_id))
-    cached = cache_service.lookup(user_id, signature)
+    kb_version = cache_service._kb_version(user_id)
+    signature = cache_service.build_signature(code, language, style, task, kb_version)
+    cached = cache_service.lookup(user_id, signature, kb_version)
 
     generation_id = str(uuid.uuid4())
     if cached:

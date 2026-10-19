@@ -16,13 +16,30 @@ def test_signature_changes_with_kb_version():
     assert a != b
 
 
+def test_kb_version_change_does_not_hit_old_cache():
+    # 代码足够长时，版本号差异对余弦的影响只有约 0.004，
+    # 旧实现仅靠 0.98 阈值会把旧知识库的结果当成命中，因此版本必须精确匹配。
+    user_id = 7373
+    code = "\n".join(f"def func_{i}(x):\n    return x + {i}" for i in range(20))
+    old_signature = cache_service.build_signature(code, "python", "docstring", "comment", "9:20")
+    new_signature = cache_service.build_signature(code, "python", "docstring", "comment", "9:21")
+    cache_service.store(user_id, old_signature, {"summary": "old"})
+
+    assert cache_service.lookup(user_id, new_signature, "9:21") is None
+    hit = cache_service.lookup(user_id, old_signature, "9:20")
+    assert hit is not None
+    assert hit["result"]["summary"] == "old"
+
+    cache_service.clear(user_id)
+
+
 def test_store_and_lookup_hit():
     user_id = 5150
     signature = cache_service.build_signature("function x(){}", "javascript", "default", "comment", "0:0")
     result = {"summary": "cached", "comments": [], "risks": [], "suggestions": [], "debug": {}}
     cache_service.store(user_id, signature, result)
 
-    hit = cache_service.lookup(user_id, signature)
+    hit = cache_service.lookup(user_id, signature, "0:0")
     assert hit is not None
     assert hit["result"]["summary"] == "cached"
 
@@ -31,7 +48,7 @@ def test_store_and_lookup_hit():
     assert stats["hits"] >= 1
 
     cache_service.clear(user_id)
-    assert cache_service.lookup(user_id, signature) is None
+    assert cache_service.lookup(user_id, signature, "0:0") is None
 
 
 def test_lookup_dimension_mismatch_auto_clears():
@@ -46,5 +63,5 @@ def test_lookup_dimension_mismatch_auto_clears():
     conn.close()
 
     signature = cache_service.build_signature("function y(){}", "javascript", "default", "comment", "0:0")
-    assert cache_service.lookup(user_id, signature) is None
+    assert cache_service.lookup(user_id, signature, "0:0") is None
     assert cache_service.stats(user_id)["entries"] == 0

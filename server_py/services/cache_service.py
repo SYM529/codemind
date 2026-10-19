@@ -34,10 +34,10 @@ def _kb_version(user_id: int) -> str:
     return f"{docs}:{chunks}"
 
 
-def lookup(user_id: int, signature: str) -> Optional[Dict[str, Any]]:
+def lookup(user_id: int, signature: str, kb_version: str) -> Optional[Dict[str, Any]]:
     conn = get_conn()
     rows = conn.execute(
-        "SELECT id, embedding_json, result_json FROM ai_cache WHERE user_id=?",
+        "SELECT id, signature, embedding_json, result_json FROM ai_cache WHERE user_id=?",
         (user_id,),
     ).fetchall()
     conn.close()
@@ -51,17 +51,26 @@ def lookup(user_id: int, signature: str) -> Optional[Dict[str, Any]]:
         logger.warning("语义缓存向量维度不一致（%s vs %s），清空该用户旧缓存", matrix.shape[1], query.shape[0])
         clear(user_id)
         return None
-    scores = matrix @ query
+
+    # 版本必须精确匹配：版本号只是签名的一小段，代码越长它对余弦的影响越小，
+    # 只靠相似度阈值无法保证"知识库一变就 miss"（长代码下版本变化仅约 0.001）。
+    marker = f"|kb={kb_version}|code="
+    selected = [i for i, row in enumerate(rows) if marker in (row["signature"] or "")]
+    if not selected:
+        return None
+
+    scores = matrix[selected] @ query
     best = int(np.argmax(scores))
     best_score = float(scores[best])
     if best_score < SIMILARITY_THRESHOLD:
         return None
 
+    best_row = rows[selected[best]]
     conn = get_conn()
-    conn.execute("UPDATE ai_cache SET hits = hits + 1 WHERE id=?", (rows[best]["id"],))
+    conn.execute("UPDATE ai_cache SET hits = hits + 1 WHERE id=?", (best_row["id"],))
     conn.commit()
     conn.close()
-    return {"score": round(best_score, 4), "result": json.loads(rows[best]["result_json"])}
+    return {"score": round(best_score, 4), "result": json.loads(best_row["result_json"])}
 
 
 def store(user_id: int, signature: str, result: Dict[str, Any]) -> None:

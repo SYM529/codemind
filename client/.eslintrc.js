@@ -23,7 +23,8 @@ module.exports = {
   ],
   rules: {
     // 自定义规则
-    'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
+    // 生产构建只提示 console.log；error/warn 是正常的错误日志，不应告警
+    'no-console': process.env.NODE_ENV === 'production' ? ['warn', { allow: ['error', 'warn'] }] : 'off',
     'no-debugger': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
     'vue/multi-word-component-names': 'off',
     'vue/no-multiple-template-root': 'off',

@@ -208,6 +208,7 @@
 import { Search, MagicStick, DocumentCopy, FolderOpened, Clock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DebugPanel from '../components/DebugPanel.vue'
+import { copyText } from '../utils/clipboard'
 
 // 各语言的推荐注释风格，切换语言时自动带出，用户仍可手动改
 const RECOMMENDED_COMMENT_STYLE = {
@@ -543,7 +544,7 @@ class Calculator:
 
     async copyComment(comment) {
       try {
-        await navigator.clipboard.writeText(comment)
+        await copyText(comment)
         ElMessage.success('注释已复制到剪贴板')
       } catch (error) {
         ElMessage.error('复制失败')
@@ -552,7 +553,7 @@ class Calculator:
 
     async copyFullCode() {
       try {
-        await navigator.clipboard.writeText(this.getAnnotatedCode)
+        await copyText(this.getAnnotatedCode)
         ElMessage.success('完整代码已复制到剪贴板')
       } catch (error) {
         ElMessage.error('复制失败')
